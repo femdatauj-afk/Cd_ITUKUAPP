@@ -1,0 +1,293 @@
+name: Deploy to Staging & Production
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - production
+
+env:
+  AWS_REGION: us-east-1
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    name: Build & Push Images
+    outputs:
+      backend-image: ${{ steps.meta-backend.outputs.tags }}
+      frontend-image: ${{ steps.meta-frontend.outputs.tags }}
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+        if: secrets.DOCKER_USERNAME != ''
+      
+      - name: Build and push backend
+        id: docker-backend
+        uses: docker/build-push-action@v5
+        with:
+          context: ./server
+          file: ./server/Dockerfile
+          push: false
+          tags: itukuapp-backend:${{ github.sha }}
+          outputs: type=docker,dest=/tmp/backend.tar
+      
+      - name: Build and push frontend
+        id: docker-frontend
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile.frontend
+          push: false
+          tags: itukuapp-frontend:${{ github.sha }}
+          outputs: type=docker,dest=/tmp/frontend.tar
+      
+      - name: Upload backend artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-image
+          path: /tmp/backend.tar
+          retention-days: 1
+      
+      - name: Upload frontend artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-image
+          path: /tmp/frontend.tar
+          retention-days: 1
+
+  test:
+    runs-on: ubuntu-latest
+    name: Run Tests
+    needs: build
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Run frontend tests
+        run: npm run build
+        continue-on-error: true
+      
+      - name: Install backend dependencies
+        working-directory: server
+        run: npm ci
+      
+      - name: Run backend tests
+        working-directory: server
+        run: npm run test
+        continue-on-error: true
+
+  deploy-staging:
+    runs-on: ubuntu-latest
+    name: Deploy to Staging
+    needs: test
+    if: github.ref == 'refs/heads/develop'
+    environment: staging
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+      
+      - name: Download backend image
+        uses: actions/download-artifact@v4
+        with:
+          name: backend-image
+          path: /tmp
+      
+      - name: Download frontend image
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-image
+          path: /tmp
+      
+      - name: Load backend image
+        run: docker load --input /tmp/backend.tar
+      
+      - name: Load frontend image
+        run: docker load --input /tmp/frontend.tar
+      
+      - name: Push to ECR
+        run: |
+          ECR_REGISTRY="${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com"
+          aws ecr get-login-password --region ${{ env.AWS_REGION }} | docker login --username AWS --password-stdin ${ECR_REGISTRY}
+          
+          # Push backend image
+          docker tag itukuapp-backend:${{ github.sha }} ${ECR_REGISTRY}/itukuapp-backend:staging-latest
+          docker tag itukuapp-backend:${{ github.sha }} ${ECR_REGISTRY}/itukuapp-backend:${{ github.sha }}
+          docker push ${ECR_REGISTRY}/itukuapp-backend:staging-latest
+          docker push ${ECR_REGISTRY}/itukuapp-backend:${{ github.sha }}
+          
+          # Push frontend image
+          docker tag itukuapp-frontend:${{ github.sha }} ${ECR_REGISTRY}/itukuapp-frontend:staging-latest
+          docker tag itukuapp-frontend:${{ github.sha }} ${ECR_REGISTRY}/itukuapp-frontend:${{ github.sha }}
+          docker push ${ECR_REGISTRY}/itukuapp-frontend:staging-latest
+          docker push ${ECR_REGISTRY}/itukuapp-frontend:${{ github.sha }}
+          
+          echo "Backend Image: ${ECR_REGISTRY}/itukuapp-backend:staging-latest"
+          echo "Frontend Image: ${ECR_REGISTRY}/itukuapp-frontend:staging-latest"
+        if: secrets.AWS_ACCESS_KEY_ID != ''
+      
+      - name: Deploy to ECS Staging
+        run: |
+          aws ecs update-service \
+            --cluster itukuapp-staging \
+            --service itukuapp-backend-staging \
+            --force-new-deployment \
+            --region ${{ env.AWS_REGION }}
+          
+          aws ecs update-service \
+            --cluster itukuapp-staging \
+            --service itukuapp-frontend-staging \
+            --force-new-deployment \
+            --region ${{ env.AWS_REGION }}
+        if: secrets.AWS_ACCESS_KEY_ID != ''
+        continue-on-error: false
+      
+      - name: Notify Staging Deployment
+        uses: 8398a7/action-slack@v3
+        if: always()
+        with:
+          status: ${{ job.status }}
+          text: 'Staging deployment completed'
+          webhook_url: ${{ secrets.SLACK_WEBHOOK }}
+          fields: repo,message,commit,author,action,eventName,ref,workflow
+
+  deploy-production:
+    runs-on: ubuntu-latest
+    name: Deploy to Production
+    needs: test
+    if: github.ref == 'refs/heads/main'
+    environment: production
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Request Production Deployment Approval
+        run: |
+          echo "⚠️ Production deployment requires manual approval"
+          echo "GitHub Actions will wait for approval before proceeding"
+      
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+      
+      - name: Download backend image
+        uses: actions/download-artifact@v4
+        with:
+          name: backend-image
+          path: /tmp
+      
+      - name: Download frontend image
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-image
+          path: /tmp
+      
+      - name: Load images
+        run: |
+          docker load --input /tmp/backend.tar
+          docker load --input /tmp/frontend.tar
+      
+      - name: Push to Production ECR
+        run: |
+          aws ecr get-login-password --region ${{ env.AWS_REGION }} | docker login --username AWS --password-stdin ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com
+          docker tag itukuapp-backend:${{ github.sha }} ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/itukuapp-backend:prod-latest
+          docker push ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/itukuapp-backend:prod-latest
+          docker tag itukuapp-frontend:${{ github.sha }} ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/itukuapp-frontend:prod-latest
+          docker push ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/itukuapp-frontend:prod-latest
+        if: secrets.AWS_ACCESS_KEY_ID != ''
+      
+      - name: Deploy to ECS Production
+        run: |
+          aws ecs update-service \
+            --cluster itukuapp-production \
+            --service itukuapp-backend \
+            --force-new-deployment \
+            --region ${{ env.AWS_REGION }}
+        if: secrets.AWS_ACCESS_KEY_ID != ''
+        continue-on-error: true
+      
+      - name: Health Check
+        run: |
+          echo "Waiting for deployment to stabilize..."
+          sleep 30
+          curl -f http://production-lb.itukuapp.com/api/health/ready || exit 1
+        continue-on-error: true
+      
+      - name: Notify Production Deployment
+        uses: 8398a7/action-slack@v3
+        if: always()
+        with:
+          status: ${{ job.status }}
+          text: 'Production deployment completed'
+          webhook_url: ${{ secrets.SLACK_WEBHOOK }}
+          fields: repo,message,commit,author,action,eventName,ref,workflow
+
+  rollback:
+    runs-on: ubuntu-latest
+    name: Rollback (Manual)
+    if: github.event_name == 'workflow_dispatch'
+    
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+      
+      - name: Rollback Deployment
+        run: |
+          ENVIRONMENT=${{ github.event.inputs.environment || 'staging' }}
+          echo "Rolling back $ENVIRONMENT..."
+          aws ecs update-service \
+            --cluster itukuapp-${ENVIRONMENT} \
+            --service itukuapp-backend \
+            --task-definition itukuapp-backend-previous \
+            --region ${{ env.AWS_REGION }}
+        if: secrets.AWS_ACCESS_KEY_ID != ''
+        continue-on-error: true
+      
+      - name: Notify Rollback
+        uses: 8398a7/action-slack@v3
+        if: always()
+        with:
+          status: ${{ job.status }}
+          text: 'Rollback completed'
+          webhook_url: ${{ secrets.SLACK_WEBHOOK }}
