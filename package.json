@@ -1,0 +1,31 @@
+{
+  "name": "itukuapp",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "@nestjs/jwt": "^11.0.2",
+    "@nestjs/passport": "^11.0.5",
+    "@prisma/client": "^7.9.1",
+    "@types/node": "22.10.2",
+    "@types/react": "19.0.2",
+    "@types/react-dom": "19.0.2",
+    "autoprefixer": "10.4.20",
+    "bcrypt": "^6.0.0",
+    "next": "15.1.2",
+    "passport": "^0.7.0",
+    "passport-jwt": "^4.0.1",
+    "postcss": "8.4.49",
+    "prisma": "^7.9.1",
+    "react": "19.0.0",
+    "react-dom": "19.0.0",
+    "socket.io-client": "^4.8.3",
+    "tailwindcss": "3.4.17",
+    "typescript": "5.7.2"
+  }
+}

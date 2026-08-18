@@ -1,0 +1,556 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id                  String   @id @default(cuid())
+  email               String   @unique
+  username            String   @unique
+  passwordHash        String
+  fullName            String
+  village             String
+  bio                 String?
+  phone               String?
+  dateOfBirth         DateTime?
+  sex                 String?
+  role                String   @default("member")
+  emailVerified       Boolean  @default(false)
+  phoneVerified       Boolean  @default(false)
+  isVerified          Boolean  @default(false)
+  isActive            Boolean  @default(false)
+  verificationStatus  String   @default("pending")
+  verificationMethod  String?
+  verifiedBadge       String?  @default("ItukuApp Verified")
+  usernameUpdatedAt   DateTime?
+  accountExpiresAt    DateTime?
+  lastVerificationAt  DateTime?
+  profilePhoto        String?
+  coverPhoto          String?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  wallet                Wallet?
+  posts                 Post[]
+  comments              Comment[]
+  likes                 Like[]
+  shares                Share[]
+  friendships           Friendship[] @relation("FriendshipUser")
+  reverseFriendships    Friendship[] @relation("FriendshipFriend")
+  followers             Follow[] @relation("FollowingUser")
+  following             Follow[] @relation("FollowedUser")
+  groups                GroupMember[]
+  pages                 Page[]
+  sentMessages          Message[] @relation("SenderMessage")
+  receivedMessages      Message[] @relation("ReceiverMessage")
+  conversationParticipants ConversationParticipant[]
+  callsMade             Call[] @relation("CallCaller")
+  callsReceived         Call[] @relation("CallReceiver")
+  emailVerifications    EmailVerification[]
+  otpCodes              OTP[]
+  passwordResets        PasswordReset[]
+  sentTransactions      CoinTransaction[] @relation("SenderTransaction")
+  receivedTransactions  CoinTransaction[] @relation("ReceiverTransaction")
+  withdrawals           Withdrawal[]
+  marketplaceListings   MarketplaceListing[]
+  moderationActions     ModerationAction[]
+  verificationAudits    VerificationAudit[]
+  verificationApprovals VerificationAudit[] @relation("VerificationApprover")
+  notifications         Notification[]
+  groupPosts            GroupPost[]
+  pagePosts             PagePost[]
+}
+
+model Wallet {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  balance   Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id])
+}
+
+model Post {
+  id        String   @id @default(cuid())
+  authorId  String
+  content   String
+  photo     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  author   User      @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  comments Comment[]
+  likes    Like[]
+  shares   Share[]
+
+  @@index([authorId])
+}
+
+model Friendship {
+  id         String   @id @default(cuid())
+  userId     String
+  friendId   String
+  status     String   @default("pending")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  user       User @relation("FriendshipUser", fields: [userId], references: [id], onDelete: Cascade)
+  friend     User @relation("FriendshipFriend", fields: [friendId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, friendId])
+  @@index([friendId])
+}
+
+model Group {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  category  String   @default("General")
+  createdAt DateTime @default(now())
+
+  members GroupMember[]
+  posts   GroupPost[]
+}
+
+model GroupMember {
+  id        String   @id @default(cuid())
+  groupId   String
+  userId    String
+  role      String   @default("member")
+  createdAt DateTime @default(now())
+
+  group Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, userId])
+  @@index([userId])
+}
+
+model Page {
+  id        String   @id @default(cuid())
+  name      String
+  category  String
+  ownerId   String
+  followers Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  owner User @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  posts PagePost[]
+
+  @@index([ownerId])
+}
+
+model MarketplaceListing {
+  id                String   @id @default(cuid())
+  sellerId          String
+  title             String
+  description       String
+  category          String
+  condition         String   @default("New")
+  price             Int
+  village           String
+  contactPreference String?
+  status            String   @default("active")
+  featured          Boolean  @default(false)
+  latitude          Float?
+  longitude         Float?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  seller            User                   @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  images            MarketplaceImage[]
+  favourites        MarketplaceFavourite[]
+  reports           MarketplaceReport[]
+
+  @@index([sellerId])
+  @@index([status])
+  @@index([category])
+  @@index([village])
+  @@index([price])
+  @@index([createdAt])
+}
+
+model MarketplaceImage {
+  id          String   @id @default(cuid())
+  listingId   String
+  url         String
+  isPrimary   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  listing     MarketplaceListing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+
+  @@index([listingId])
+}
+
+model MarketplaceFavourite {
+  id          String   @id @default(cuid())
+  listingId   String
+  userId      String
+  createdAt   DateTime @default(now())
+
+  listing MarketplaceListing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+
+  @@unique([listingId, userId])
+  @@index([userId])
+}
+
+model MarketplaceReport {
+  id          String   @id @default(cuid())
+  listingId   String
+  reporterId  String
+  reason      String
+  notes       String?
+  createdAt   DateTime @default(now())
+
+  listing MarketplaceListing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+
+  @@index([listingId])
+  @@index([reporterId])
+}
+
+// Email verification for registration
+model EmailVerification {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+// OTP for two-factor authentication
+model OTP {
+  id        String   @id @default(cuid())
+  userId    String
+  code      String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  usedAt    DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([code])
+}
+
+// Password reset tokens
+model PasswordReset {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  usedAt    DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+// Follow relationships (different from friendships)
+model Follow {
+  id        String   @id @default(cuid())
+  followerId String
+  followedId String
+  createdAt DateTime @default(now())
+
+  follower User @relation("FollowingUser", fields: [followerId], references: [id], onDelete: Cascade)
+  followed User @relation("FollowedUser", fields: [followedId], references: [id], onDelete: Cascade)
+
+  @@unique([followerId, followedId])
+  @@index([followedId])
+}
+
+// Direct messages
+model Message {
+  id         String   @id @default(cuid())
+  senderId   String
+  receiverId String
+  content    String
+  readAt     DateTime?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  conversationId String?
+  type       MessageType @default(TEXT)
+  editedAt   DateTime?
+  deletedAt  DateTime?
+  replyToMessageId String?
+  attachmentUrl String?
+  attachmentName String?
+  attachmentMimeType String?
+  clientId String? @unique
+
+  conversation Conversation? @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  replyTo Message? @relation("MessageReplies", fields: [replyToMessageId], references: [id])
+  replies Message[] @relation("MessageReplies")
+
+  sender   User @relation("SenderMessage", fields: [senderId], references: [id], onDelete: Cascade)
+  receiver User @relation("ReceiverMessage", fields: [receiverId], references: [id], onDelete: Cascade)
+
+  @@index([senderId])
+  @@index([receiverId])
+  @@index([createdAt])
+  @@index([conversationId, createdAt])
+}
+
+enum MessageType {
+  TEXT
+  IMAGE
+  VIDEO
+  FILE
+  AUDIO
+  VOICE
+  SYSTEM
+  CALL
+}
+
+enum CallType {
+  VOICE
+  VIDEO
+}
+
+enum CallStatus {
+  RINGING
+  ACCEPTED
+  REJECTED
+  MISSED
+  CANCELLED
+  ENDED
+  FAILED
+}
+
+model Conversation {
+  id            String                    @id @default(cuid())
+  directKey     String                    @unique
+  createdAt     DateTime                  @default(now())
+  updatedAt     DateTime                  @updatedAt
+  lastMessageAt DateTime?
+  participants  ConversationParticipant[]
+  messages      Message[]
+  calls         Call[]
+}
+
+model ConversationParticipant {
+  id             String       @id @default(cuid())
+  conversationId String
+  userId         String
+  joinedAt       DateTime     @default(now())
+  lastReadAt     DateTime?
+  mutedAt        DateTime?
+  archivedAt     DateTime?
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([conversationId, userId])
+  @@index([userId])
+}
+
+model Call {
+  id             String       @id @default(cuid())
+  conversationId String
+  callerId       String
+  receiverId     String
+  type           CallType
+  status         CallStatus   @default(RINGING)
+  startedAt      DateTime?
+  answeredAt     DateTime?
+  endedAt        DateTime?
+  duration       Int          @default(0)
+  createdAt      DateTime     @default(now())
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  caller         User         @relation("CallCaller", fields: [callerId], references: [id], onDelete: Cascade)
+  receiver       User         @relation("CallReceiver", fields: [receiverId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId, createdAt])
+  @@index([receiverId, status])
+}
+
+// Comments on posts
+model Comment {
+  id        String   @id @default(cuid())
+  postId    String
+  authorId  String
+  content   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  post   Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+  author User @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@index([postId])
+  @@index([authorId])
+}
+
+// Likes on posts
+model Like {
+  id        String   @id @default(cuid())
+  postId    String
+  userId    String
+  createdAt DateTime @default(now())
+
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, userId])
+  @@index([userId])
+}
+
+// Shares of posts
+model Share {
+  id        String   @id @default(cuid())
+  postId    String
+  userId    String
+  createdAt DateTime @default(now())
+
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, userId])
+  @@index([userId])
+}
+
+// Coin transactions (transfers between users)
+model CoinTransaction {
+  id        String   @id @default(cuid())
+  senderId  String
+  receiverId String
+  amount    Int
+  type      String   @default("transfer") // "transfer", "gift", "payment"
+  status    String   @default("completed") // "pending", "completed", "failed"
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  sender    User @relation("SenderTransaction", fields: [senderId], references: [id], onDelete: Cascade)
+  receiver  User @relation("ReceiverTransaction", fields: [receiverId], references: [id], onDelete: Cascade)
+
+  @@index([senderId])
+  @@index([receiverId])
+  @@index([createdAt])
+}
+
+// Coin withdrawals
+model Withdrawal {
+  id           String   @id @default(cuid())
+  userId       String
+  amount       Int
+  bankAccount  String
+  status       String   @default("pending") // "pending", "processing", "completed", "failed"
+  failureReason String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  processedAt  DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+// Moderation actions and user restrictions
+model ModerationAction {
+  id          String   @id @default(cuid())
+  userId      String
+  action      String   @default("warning") // "warning", "mute", "suspend", "ban"
+  reason      String
+  duration    Int?     // duration in hours, null for permanent
+  createdAt   DateTime @default(now())
+  expiresAt   DateTime?
+  resolvedAt  DateTime?
+  isActive    Boolean  @default(true)
+
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([action])
+  @@index([isActive])
+}
+
+// User verification audit trail
+model VerificationAudit {
+  id                String   @id @default(cuid())
+  userId            String
+  verificationStatus String  // "pending", "approved", "rejected", "under_review"
+  verificationMethod String?
+  approvedBy        String?
+  approvalReason    String?
+  rejectionReason   String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  approver          User?    @relation("VerificationApprover", fields: [approvedBy], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([verificationStatus])
+  @@index([createdAt])
+}
+
+// System notifications for users
+model Notification {
+  id          String   @id @default(cuid())
+  userId      String
+  type        String   // "friend_request", "message", "post_like", "comment", "system", etc.
+  title       String
+  message     String
+  read        Boolean  @default(false)
+  relatedId   String?  // ID of related entity (post, user, etc.)
+  relatedType String?  // Type of related entity (post, user, etc.)
+  createdAt   DateTime @default(now())
+  expiresAt   DateTime? // Auto-delete notifications after expiration
+
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([read])
+  @@index([type])
+  @@index([createdAt])
+}
+
+// Posts in groups
+model GroupPost {
+  id        String   @id @default(cuid())
+  groupId   String
+  authorId  String
+  content   String
+  photo     String?
+  likes     Int      @default(0)
+  comments  Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  group     Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  author    User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@index([groupId])
+  @@index([authorId])
+  @@index([createdAt])
+}
+
+// Posts on pages
+model PagePost {
+  id        String   @id @default(cuid())
+  pageId    String
+  authorId  String
+  content   String
+  photo     String?
+  likes     Int      @default(0)
+  comments  Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  page      Page     @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  author    User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@index([pageId])
+  @@index([authorId])
+  @@index([createdAt])
+}
