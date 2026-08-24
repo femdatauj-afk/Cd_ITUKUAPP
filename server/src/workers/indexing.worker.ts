@@ -83,7 +83,8 @@ export class IndexingWorker {
    */
   private async indexContent(job: WorkerJob): Promise<void> {
     try {
-      const { contentType, contentId, title, content, authorId, tags } = job.payload;
+      const { contentType, contentId, title, content, authorId, tags } =
+        job.payload;
 
       this.logger.log(`Indexing ${contentType} ${contentId}`);
 
@@ -173,7 +174,9 @@ export class IndexingWorker {
    * Get all indexed entries for a content type
    */
   getIndexedByType(contentType: string): IndexEntry[] {
-    return Array.from(this.indexStorage.values()).filter((entry) => entry.type === contentType);
+    return Array.from(this.indexStorage.values()).filter(
+      (entry) => entry.type === contentType,
+    );
   }
 
   /**

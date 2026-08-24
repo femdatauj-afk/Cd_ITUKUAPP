@@ -1,11 +1,16 @@
+import 'dotenv/config';
 import { PrismaClient } from '@prisma/client';
 import { PrismaBetterSqlite3 } from '@prisma/adapter-better-sqlite3';
+import { PrismaPg } from '@prisma/adapter-pg';
 import * as bcrypt from 'bcrypt';
 
+const databaseUrl = process.env.DATABASE_URL || 'file:./dev.db';
+const adapter = databaseUrl.startsWith('postgresql://')
+  ? new PrismaPg({ connectionString: databaseUrl })
+  : new PrismaBetterSqlite3({ url: databaseUrl.replace(/^file:/, '') });
+
 const prisma = new PrismaClient({
-  adapter: new PrismaBetterSqlite3({
-    url: 'file:./dev.db',
-  }),
+  adapter,
 });
 
 async function main() {
@@ -23,12 +28,25 @@ async function main() {
     { email: 'musa.nwachukwu@ituku.app', username: 'MusaNwachukwu', fullName: 'Musa Nwachukwu', village: 'Umukulu', phone: '08030010009', sex: 'male', role: 'member', isVerified: true, verifiedBadge: 'ItukuApp Verified', bio: 'Student and community volunteer.' },
   ];
 
+  const communityModeratorAccounts = [
+    { email: 'moderator.amokolo@ituku.app', username: 'ModeratorAmokolo', fullName: 'Amokolo Community Moderator', village: 'Amokolo', phone: '08030020001', sex: 'other', role: 'moderator', isVerified: true, verifiedBadge: 'ItukuApp Verified', bio: 'Assigned moderator for Amokolo community.' },
+    { email: 'moderator.umukulu@ituku.app', username: 'ModeratorUmukulu', fullName: 'Umukulu Community Moderator', village: 'Umukulu', phone: '08030020002', sex: 'other', role: 'moderator', isVerified: true, verifiedBadge: 'ItukuApp Verified', bio: 'Assigned moderator for Umukulu community.' },
+    { email: 'moderator.ugwunagbo@ituku.app', username: 'ModeratorUgwunagbo', fullName: 'Ugwunagbo Community Moderator', village: 'Ugwunagbo', phone: '08030020003', sex: 'other', role: 'moderator', isVerified: true, verifiedBadge: 'ItukuApp Verified', bio: 'Assigned moderator for Ugwunagbo community.' },
+    { email: 'moderator.okwenachala@ituku.app', username: 'ModeratorOkwenachala', fullName: 'Okwenachala Community Moderator', village: 'Okwenachala', phone: '08030020004', sex: 'other', role: 'moderator', isVerified: true, verifiedBadge: 'ItukuApp Verified', bio: 'Assigned moderator for Okwenachala community.' },
+    { email: 'moderator.ofeinyi@ituku.app', username: 'ModeratorOfeinyi', fullName: 'Ofeinyi Community Moderator', village: 'Ofeinyi', phone: '08030020005', sex: 'other', role: 'moderator', isVerified: true, verifiedBadge: 'ItukuApp Verified', bio: 'Assigned moderator for Ofeinyi community.' },
+    { email: 'moderator.amata@ituku.app', username: 'ModeratorAmata', fullName: 'Amata Community Moderator', village: 'Amata', phone: '08030020006', sex: 'other', role: 'moderator', isVerified: true, verifiedBadge: 'ItukuApp Verified', bio: 'Assigned moderator for Amata community.' },
+    { email: 'moderator.umunevonta@ituku.app', username: 'ModeratorUmunevonta', fullName: 'Umunevonta Community Moderator', village: 'Umunevonta', phone: '08030020007', sex: 'other', role: 'moderator', isVerified: true, verifiedBadge: 'ItukuApp Verified', bio: 'Assigned moderator for Umunevonta community.' },
+    { email: 'moderator.umuowoh@ituku.app', username: 'ModeratorUmuowoh', fullName: 'Umuowoh Community Moderator', village: 'Umuowoh', phone: '08030020008', sex: 'other', role: 'moderator', isVerified: true, verifiedBadge: 'ItukuApp Verified', bio: 'Assigned moderator for Umuowoh community.' },
+    { email: 'moderator.umuonyiba@ituku.app', username: 'ModeratorUmuonyiba', fullName: 'Umuonyiba Community Moderator', village: 'Umuonyiba', phone: '08030020009', sex: 'other', role: 'moderator', isVerified: true, verifiedBadge: 'ItukuApp Verified', bio: 'Assigned moderator for Umuonyiba community.' },
+    { email: 'ituku.bolt@ituku.app', username: 'ItukuBolt', fullName: 'Ituku Bolt Customer Service', village: 'ItukuHQ', phone: '08030020010', sex: 'other', role: 'admin', isVerified: true, verifiedBadge: 'ItukuApp Verified', bio: 'Customer service and platform operations account.' },
+  ];
+
   const developer = await prisma.user.findFirst({ where: { email: 'henry4683328@gmail.com' } });
   const passwordHash = await bcrypt.hash(password, 10);
 
   const createdUsers: Array<{ id: string; username: string; role: string }> = [];
 
-  for (const account of seededAccounts) {
+  for (const account of [...seededAccounts, ...communityModeratorAccounts]) {
     const existingUser = await prisma.user.findFirst({
       where: { OR: [{ email: account.email }, { username: account.username }] },
     });
@@ -66,6 +84,33 @@ async function main() {
       where: { userId: user.id },
       update: { balance: 1000000 },
       create: { userId: user.id, balance: 1000000 },
+    });
+  }
+
+  const communityAssignments = [
+    ['AMOKOLO', 'ModeratorAmokolo'],
+    ['UMUKULU', 'ModeratorUmukulu'],
+    ['UGWUNAGBO', 'ModeratorUgwunagbo'],
+    ['OKWENACHALA', 'ModeratorOkwenachala'],
+    ['OFEINYI', 'ModeratorOfeinyi'],
+    ['AMATA', 'ModeratorAmata'],
+    ['UMUNEVONTA', 'ModeratorUmunevonta'],
+    ['UMUOWOH', 'ModeratorUmuowoh'],
+    ['UMUONYIBA', 'ModeratorUmuonyiba'],
+  ];
+
+  for (const [name, username] of communityAssignments) {
+    const moderator = await prisma.user.findUnique({ where: { username } });
+    if (!moderator) continue;
+    const community = await prisma.community.upsert({
+      where: { slug: name.toLowerCase() },
+      update: { name },
+      create: { name, slug: name.toLowerCase() },
+    });
+    await prisma.communityMember.upsert({
+      where: { communityId_userId: { communityId: community.id, userId: moderator.id } },
+      update: { role: 'moderator' },
+      create: { communityId: community.id, userId: moderator.id, role: 'moderator' },
     });
   }
 

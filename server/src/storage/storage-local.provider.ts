@@ -9,7 +9,8 @@ import type { Express } from 'express';
 export class LocalStorageProvider implements IStorageProvider {
   private readonly logger = new Logger(LocalStorageProvider.name);
   private readonly uploadDir = path.join(process.cwd(), 'public', 'uploads');
-  private readonly cdnBaseUrl = process.env.MEDIA_CDN_BASE_URL || 'http://localhost:3001';
+  private readonly cdnBaseUrl =
+    process.env.MEDIA_CDN_BASE_URL || 'http://localhost:3001';
 
   constructor() {
     this.ensureDirectoryExists();
@@ -24,7 +25,10 @@ export class LocalStorageProvider implements IStorageProvider {
     }
   }
 
-  async upload(file: Express.Multer.File, filePath: string): Promise<{ url: string; key: string }> {
+  async upload(
+    file: Express.Multer.File,
+    filePath: string,
+  ): Promise<{ url: string; key: string }> {
     try {
       const uploadPath = path.join(this.uploadDir, filePath);
       const uploadDirPath = path.dirname(uploadPath);

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { AppShell } from "../components/app-shell";
+import { createGroup, fetchGroups } from "../lib/api";
 
 const defaultGroupCover = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(`
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="420" viewBox="0 0 1200 420">
@@ -55,6 +56,7 @@ type GroupPost = {
 
 type Group = {
   id: string;
+  slug?: string;
   name: string;
   category: string;
   description: string;
@@ -142,7 +144,10 @@ const readGroups = (): Group[] => {
 
   try {
     const parsed = JSON.parse(raw) as Group[];
-    return parsed.length ? parsed : seedGroups;
+    return parsed.length ? parsed.map((group) => ({
+      ...group,
+      slug: group.slug || `${group.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}-${group.id}`,
+    })) : seedGroups;
   } catch {
     localStorage.setItem("ituku-groups", JSON.stringify(seedGroups));
     return seedGroups;
@@ -169,10 +174,49 @@ export default function GroupsPage() {
   const [successMsg, setSuccessMsg] = useState("");
   const [profilePhoto, setProfilePhoto] = useState(defaultGroupProfile);
   const [coverPhoto, setCoverPhoto] = useState(defaultGroupCover);
+  const [followedGroups, setFollowedGroups] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem("ituku-followed-groups") || "{}");
+      setFollowedGroups(saved && typeof saved === "object" ? saved : {});
+    } catch {
+      setFollowedGroups({});
+    }
+  }, []);
+
+  const toggleGroupFollow = (groupId: string) => {
+    setFollowedGroups((current) => {
+      const next = { ...current, [groupId]: !current[groupId] };
+      localStorage.setItem("ituku-followed-groups", JSON.stringify(next));
+      return next;
+    });
+  };
 
   useEffect(() => {
     const savedGroups = readGroups();
     setGroups(savedGroups);
+    fetchGroups().then((remoteGroups) => {
+      setGroups((current) => {
+        const existingIds = new Set(current.map((group) => group.id));
+        const remote = remoteGroups
+          .filter((group) => !existingIds.has(group.id))
+          .map((group) => ({
+            id: group.id,
+            slug: group.slug,
+            name: group.name,
+            category: group.category,
+            description: "Community group for local updates and collaboration.",
+            members: group._count.members,
+            profilePhoto: defaultGroupProfile,
+            coverPhoto: defaultGroupCover,
+            rules: [],
+            membersList: [],
+            posts: [],
+          }));
+        return [...remote, ...current];
+      });
+    }).catch(() => undefined);
   }, []);
 
   useEffect(() => {
@@ -198,8 +242,15 @@ export default function GroupsPage() {
     setSuccessMsg("");
 
     try {
+      let created: { id: string; slug: string } | null = null;
+      try {
+        created = await createGroup({ name: groupName.trim(), category });
+      } catch {
+        created = null;
+      }
       const newGroup: Group = {
-        id: `g${Date.now()}`,
+        id: created?.id || `g${Date.now()}`,
+        slug: created?.slug || `${groupName.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}-${Date.now().toString(36)}`,
         name: groupName.trim(),
         category,
         description: groupDescription.trim() || "A dedicated community for learning, updates, and collaboration.",
@@ -258,6 +309,9 @@ export default function GroupsPage() {
         .group-card p { margin: 0; color: #536155; line-height: 1.6; }
         .group-card strong { color: #123f2a; }
         .group-card .read-more { display: inline-flex; margin-top: 0.9rem; font-size: 0.8rem; font-weight: 800; color: #0f6738; }
+        .group-card-actions { display: flex; align-items: center; justify-content: space-between; gap: .6rem; margin-top: .8rem; }
+        .follow-button { border: 1px solid #0f6738; border-radius: 999px; background: #fff; color: #0f6738; padding: .55rem .8rem; font-weight: 800; cursor: pointer; }
+        .follow-button.following { background: #0f6738; color: #fff; }
         @media (max-width: 700px) {
           .group-toolbar { align-items: stretch; }
           .group-search { max-width: none; }
@@ -339,7 +393,8 @@ export default function GroupsPage() {
 
         <section className="group-grid">
           {filteredGroups.map((group) => (
-            <Link href={`/groups/${group.id}`} key={group.id} className="group-card community-link">
+            <article key={group.id} className="group-card">
+              <Link href={`/groups/${group.slug || group.id}`} className="community-link">
               <img src={group.coverPhoto || defaultGroupCover} alt={`${group.name} cover`} className="group-cover" />
               <div className="group-card-body">
                 <div className="group-card-head">
@@ -350,9 +405,10 @@ export default function GroupsPage() {
                 <p>
                   <strong>{group.members}</strong> members
                 </p>
-                <span className="read-more">Open community →</span>
+                <div className="group-card-actions"><span className="read-more">Open community →</span><button type="button" className={followedGroups[group.id] ? "follow-button following" : "follow-button"} onClick={(event) => { event.preventDefault(); event.stopPropagation(); toggleGroupFollow(group.id); }}>{followedGroups[group.id] ? "Following" : "Follow"}</button></div>
               </div>
-            </Link>
+              </Link>
+            </article>
           ))}
         </section>
       </div>

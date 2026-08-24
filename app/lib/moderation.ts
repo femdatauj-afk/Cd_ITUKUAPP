@@ -99,6 +99,42 @@ export const adminDirectory: AdminProfile[] = [
     avatar: "ID",
     description: "Reviews school updates, moderation actions and community quality.",
   },
+  {
+    id: "support-admin-1",
+    name: "Ituku Bolt Customer Service",
+    title: "Platform Support",
+    position: "Community support",
+    entityType: "community",
+    entityName: "ItukuApp Support",
+    isModerator: true,
+    isAdmin: true,
+    avatar: "IB",
+    description: "Operates the platform support queue, account validation and community guidance for the ItukuApp network.",
+  },
+  {
+    id: "support-admin-2",
+    name: "Ituku Bolt Customer Service",
+    title: "Support moderator",
+    position: "Group support",
+    entityType: "group",
+    entityName: "ItukuApp Operations",
+    isModerator: true,
+    isAdmin: true,
+    avatar: "IB",
+    description: "Helps manage operational escalations, onboarding checks and governance support across groups.",
+  },
+  {
+    id: "support-admin-3",
+    name: "Ituku Bolt Customer Service",
+    title: "Page support",
+    position: "Platform helpdesk",
+    entityType: "page",
+    entityName: "ItukuApp Help Desk",
+    isModerator: true,
+    isAdmin: true,
+    avatar: "IB",
+    description: "Supports platform follow-up, account verification help and moderation guidance for pages.",
+  },
 ];
 
 export const defaultModerationEvents: ModerationEvent[] = [
@@ -167,4 +203,53 @@ export function applyModerationAction(payload: {
 
   localStorage.setItem("ituku-moderation-events", JSON.stringify(next));
   return next[0];
+}
+
+export function normalizeStorageKey(value: string) {
+  return String(value || "ituku-user")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "") || "ituku-user";
+}
+
+export function addLocalNotification(userName: string, title: string, message: string) {
+  if (typeof window === "undefined") return null;
+
+  const key = `ituku-notifications-${normalizeStorageKey(userName)}`;
+  const notification = {
+    id: `notification-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    title,
+    message,
+    read: false,
+    createdAt: new Date().toISOString(),
+  };
+
+  const existing = JSON.parse(localStorage.getItem(key) || "[]");
+  const next = [notification, ...Array.isArray(existing) ? existing : []].slice(0, 50);
+  localStorage.setItem(key, JSON.stringify(next));
+
+  const allKey = "ituku-notifications";
+  const all = JSON.parse(localStorage.getItem(allKey) || "[]");
+  localStorage.setItem(allKey, JSON.stringify([notification, ...Array.isArray(all) ? all : []].slice(0, 100)));
+
+  return notification;
+}
+
+export function addEntityAnnouncement(entityType: ModerationTarget, entityName: string, message: string) {
+  if (typeof window === "undefined") return null;
+
+  const key = `ituku-entity-announcements-${entityType}-${normalizeStorageKey(entityName)}`;
+  const existing = JSON.parse(localStorage.getItem(key) || "[]");
+  const entry = {
+    id: `announcement-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    entityType,
+    entityName,
+    message,
+    createdAt: new Date().toISOString(),
+  };
+
+  const next = [entry, ...Array.isArray(existing) ? existing : []].slice(0, 20);
+  localStorage.setItem(key, JSON.stringify(next));
+  return entry;
 }

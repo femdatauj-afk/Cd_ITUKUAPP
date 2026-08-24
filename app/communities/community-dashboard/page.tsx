@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { communityDirectory } from "../../lib/community-directory";
 
 const allCommunities = communityDirectory;
@@ -11,6 +11,81 @@ type TabKey = "Overview" | "Members" | "Meetings" | "Polls" | "Settings";
 export default function CommunityDashboardPage() {
   const [selectedTab, setSelectedTab] = useState<TabKey>("Overview");
   const [selectedVillage, setSelectedVillage] = useState(allCommunities[0]);
+  const [selectedMemberId, setSelectedMemberId] = useState(allCommunities[0].membersList[0]?.id ?? "");
+  const [pollComposerOpen, setPollComposerOpen] = useState(false);
+  const [meetingComposerOpen, setMeetingComposerOpen] = useState(false);
+  const [pollQuestion, setPollQuestion] = useState("");
+  const [pollOptions, setPollOptions] = useState(["", ""]);
+  const [pollStartDate, setPollStartDate] = useState("");
+  const [pollStartTime, setPollStartTime] = useState("");
+  const [pollEndDate, setPollEndDate] = useState("");
+  const [pollEndTime, setPollEndTime] = useState("");
+  const [meetingTitle, setMeetingTitle] = useState("");
+  const [meetingDate, setMeetingDate] = useState("Thursday, 29 Aug");
+  const [meetingTime, setMeetingTime] = useState("6:30 PM");
+  const [meetingAgenda, setMeetingAgenda] = useState("");
+  const [pollVotes, setPollVotes] = useState<Record<string, string>>({});
+  const [customPolls, setCustomPolls] = useState<Record<string, Array<{ id: string; question: string; ends: string; options: Array<{ id: string; label: string; votes: number }> }>>>({});
+  const [customMeetings, setCustomMeetings] = useState<Record<string, Array<{ id: string; title: string; date: string; time: string; host: string; agenda: string }>>>({});
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const params = new URLSearchParams(window.location.search);
+    const requested = params.get("community");
+    const requestedTab = params.get("tab") as TabKey | null;
+    const match = requested ? allCommunities.find((community) => community.slug === requested) : undefined;
+
+    if (match) {
+      setSelectedVillage(match);
+      setSelectedMemberId(match.membersList[0]?.id ?? "");
+    }
+
+    if (requestedTab && ["Overview", "Members", "Meetings", "Polls", "Settings"].includes(requestedTab)) {
+      setSelectedTab(requestedTab);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const savedPolls = JSON.parse(localStorage.getItem("ituku-community-dashboard-polls") || "{}");
+      setCustomPolls(savedPolls && typeof savedPolls === "object" ? savedPolls : {});
+    } catch {
+      setCustomPolls({});
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      localStorage.setItem("ituku-community-dashboard-polls", JSON.stringify(customPolls));
+    }
+  }, [customPolls]);
+
+  useEffect(() => {
+    setSelectedMemberId((current) => (selectedVillage.membersList.some((member) => member.id === current) ? current : selectedVillage.membersList[0]?.id ?? ""));
+  }, [selectedVillage]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const params = new URLSearchParams(window.location.search);
+    params.set("community", selectedVillage.slug);
+    params.set("tab", selectedTab);
+
+    const nextUrl = `${window.location.pathname}?${params.toString()}`;
+    window.history.replaceState({}, "", nextUrl);
+  }, [selectedVillage, selectedTab]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const savedVotes = JSON.parse(localStorage.getItem("ituku-poll-votes") || "{}");
+      setPollVotes(savedVotes && typeof savedVotes === "object" ? savedVotes : {});
+    } catch {
+      setPollVotes({});
+    }
+  }, []);
 
   const totals = useMemo(() => {
     const totalMembers = allCommunities.reduce((sum, community) => sum + community.members, 0);
@@ -26,6 +101,103 @@ export default function CommunityDashboardPage() {
     return { totalMembers, totalAdmins, totalFines };
   }, [selectedVillage]);
 
+  const selectedMember = selectedVillage.membersList.find((member) => member.id === selectedMemberId) ?? selectedVillage.membersList[0];
+  const visiblePolls = [...selectedVillage.polls, ...(customPolls[selectedVillage.slug] || [])];
+  const visibleMeetings = [...selectedVillage.meetings, ...(customMeetings[selectedVillage.slug] || [])];
+
+  const updateSelectedVillageMembers = (mutator: (members: typeof selectedVillage.membersList) => typeof selectedVillage.membersList) => {
+    setSelectedVillage((current) => ({
+      ...current,
+      membersList: mutator(current.membersList),
+    }));
+  };
+
+  const voteInPoll = (pollId: string, optionId: string) => {
+    if (pollVotes[pollId]) return;
+    setPollVotes((current) => ({ ...current, [pollId]: optionId }));
+    localStorage.setItem("ituku-poll-votes", JSON.stringify({ ...pollVotes, [pollId]: optionId }));
+    setSelectedVillage((current) => ({
+      ...current,
+      polls: current.polls.map((poll) => poll.id !== pollId ? poll : {
+        ...poll,
+        options: poll.options.map((option) => option.id === optionId ? { ...option, votes: option.votes + 1 } : option),
+      }),
+    }));
+    setCustomPolls((current) => ({
+      ...current,
+      [selectedVillage.slug]: (current[selectedVillage.slug] || []).map((poll) => poll.id !== pollId ? poll : {
+        ...poll,
+        options: poll.options.map((option) => option.id === optionId ? { ...option, votes: option.votes + 1 } : option),
+      }),
+    }));
+  };
+
+  const handleMakeAdmin = () => {
+    if (!selectedMember) return;
+    updateSelectedVillageMembers((members) => members.map((member) => member.id === selectedMember.id
+      ? { ...member, isAdmin: true, role: member.role === "Ordinary Member" ? "Village Executive" : member.role }
+      : member));
+  };
+
+  const handleSuspendMember = () => {
+    if (!selectedMember) return;
+    updateSelectedVillageMembers((members) => members.map((member) => member.id === selectedMember.id
+      ? { ...member, status: "Suspended 2 weeks" }
+      : member));
+  };
+
+  const handleApplyFine = () => {
+    if (!selectedMember) return;
+    updateSelectedVillageMembers((members) => members.map((member) => member.id === selectedMember.id
+      ? { ...member, fineDue: member.fineDue + 25, coinBalance: Math.max(0, member.coinBalance - 25) }
+      : member));
+  };
+
+  const publishMeeting = () => {
+    const title = meetingTitle.trim();
+    const agenda = meetingAgenda.trim();
+    if (!title || !agenda) return;
+
+    const nextMeeting = {
+      id: `local-meeting-${Date.now()}`,
+      title,
+      date: meetingDate.trim() || "Thursday, 29 Aug",
+      time: meetingTime.trim() || "6:30 PM",
+      host: "Village Chairman",
+      agenda,
+    };
+
+    setCustomMeetings((current) => ({
+      ...current,
+      [selectedVillage.slug]: [...(current[selectedVillage.slug] || []), nextMeeting],
+    }));
+
+    setMeetingTitle("");
+    setMeetingDate("Thursday, 29 Aug");
+    setMeetingTime("6:30 PM");
+    setMeetingAgenda("");
+    setMeetingComposerOpen(false);
+    setSelectedTab("Meetings");
+  };
+
+  const publishPoll = () => {
+    const question = pollQuestion.trim();
+    const options = pollOptions.filter((option) => option.trim());
+    if (!question || options.length < 2) return;
+    const startText = `${pollStartDate || "Today"}${pollStartTime ? ` at ${pollStartTime}` : ""}`;
+    const endText = `${pollEndDate || "7 days from now"}${pollEndTime ? ` at ${pollEndTime}` : ""}`;
+    const poll = { id: `local-${Date.now()}`, question, ends: `From ${startText} to ${endText}`, options: options.map((label, index) => ({ id: `option-${index}`, label: label.trim(), votes: 0 })) };
+    setCustomPolls((current) => ({ ...current, [selectedVillage.slug]: [...(current[selectedVillage.slug] || []), poll] }));
+    setPollQuestion("");
+    setPollOptions(["", ""]);
+    setPollStartDate("");
+    setPollStartTime("");
+    setPollEndDate("");
+    setPollEndTime("");
+    setPollComposerOpen(false);
+    setSelectedTab("Polls");
+  };
+
   return (
     <>
       <style jsx global>{`
@@ -38,6 +210,16 @@ export default function CommunityDashboardPage() {
           grid-template-columns: repeat(3, minmax(0, 1fr));
           gap: 16px;
         }
+          .poll-workspace { display: grid; gap: 16px; }
+          .poll-composer { display: grid; gap: 12px; padding: 22px; border: 1px solid #dbeadf; border-radius: 18px; background: linear-gradient(135deg, #f3fbf4, #fff); }
+          .poll-composer h3 { margin: 0 0 6px; color: #112117; }
+          .poll-composer p { margin: 0; color: #5d7063; line-height: 1.6; }
+          .poll-composer input { width: 100%; padding: 12px 13px; border: 1px solid #dce9de; border-radius: 10px; background: #fff; }
+          .poll-option-editor { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+          .poll-primary { width: max-content; border: 0; border-radius: 999px; padding: 11px 16px; background: #0b6737; color: #fff; font-weight: 700; cursor: pointer; }
+          .poll-card-head { display: flex; justify-content: space-between; gap: 12px; }
+          .poll-label { color: #0b6737; font-size: 10px; font-weight: 800; letter-spacing: .12em; }
+          .poll-status { color: #8a6715; font-size: 11px; white-space: nowrap; }
         .metric-card, .panel-card, .village-card, .settings-card, .poll-card, .meeting-card {
           background: linear-gradient(180deg, #fff, #f9fbf7);
           border: 1px solid #e5eee3;
@@ -248,7 +430,12 @@ export default function CommunityDashboardPage() {
           border: 1px solid #edf2ee;
           border-radius: 12px;
           background: #fafcfb;
-        }
+          cursor: pointer;
+          text-align: left;
+          width: 100%;
+          }
+          .option-row:hover, .option-row.selected { border-color: #8fc39c; background: #edf8ef; }
+          .option-row:disabled { opacity: 1; }
         .settings-grid {
           display: grid;
           grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -279,8 +466,16 @@ export default function CommunityDashboardPage() {
           background: #f5f7f4;
           color: #1d2f24;
         }
+        .admin-actions button:disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
+        }
         @media (max-width: 900px) {
           .community-topbar, .meeting-grid, .poll-grid, .settings-grid, .community-overview-grid { grid-template-columns: 1fr; }
+        }
+        @media (max-width: 600px) {
+          .poll-option-editor { grid-template-columns: 1fr; }
+          .poll-card-head { flex-direction: column; gap: 4px; }
         }
       `}</style>
 
@@ -294,7 +489,7 @@ export default function CommunityDashboardPage() {
           <div className="metric-card">
             <span className="label">Community admins</span>
             <strong>{totals.totalAdmins}</strong>
-            <span>Chairmen and executive leaders</span>
+            <span>Chairmen, executives and moderators</span>
           </div>
           <div className="metric-card">
             <span className="label">Outstanding fines</span>
@@ -328,8 +523,8 @@ export default function CommunityDashboardPage() {
             <h3>{selectedVillage.name}</h3>
             <p style={{ margin: "0 0 12px", color: "#4d5f55", lineHeight: 1.7 }}>{selectedVillage.summary}</p>
             <div className="admin-actions">
-              <button type="button">Create poll</button>
-              <button type="button" className="secondary">Schedule meeting</button>
+              <button type="button" onClick={() => { setPollComposerOpen(true); setSelectedTab("Polls"); }}>Create poll</button>
+              <button type="button" className="secondary" onClick={() => { setMeetingComposerOpen(true); setSelectedTab("Meetings"); }}>Schedule meeting</button>
             </div>
             <div style={{ marginTop: 16, display: "grid", gap: 8 }}>
               <div className="role-badge">Village motto: {selectedVillage.motto}</div>
@@ -374,7 +569,7 @@ export default function CommunityDashboardPage() {
               <h3>Community members</h3>
               <div className="member-list">
                 {selectedVillage.membersList.map((member) => (
-                  <div key={member.id} className="member-row">
+                  <div key={member.id} className={`member-row ${selectedMemberId === member.id ? "selected" : ""}`} onClick={() => setSelectedMemberId(member.id)} style={{ cursor: "pointer", border: selectedMemberId === member.id ? "1px solid #8fc39c" : undefined }}>
                     <div className="user">
                       <div className="member-avatar">{member.name.split(" ").map((part) => part[0]).slice(0, 2).join("")}</div>
                       <div>
@@ -394,35 +589,56 @@ export default function CommunityDashboardPage() {
           )}
 
           {selectedTab === "Meetings" && (
-            <div className="meeting-grid">
-              {selectedVillage.meetings.map((meeting) => (
-                <div key={meeting.id} className="meeting-card">
-                  <h4>{meeting.title}</h4>
-                  <p><strong>Date:</strong> {meeting.date}</p>
-                  <p><strong>Time:</strong> {meeting.time}</p>
-                  <p><strong>Host:</strong> {meeting.host}</p>
-                  <p><strong>Agenda:</strong> {meeting.agenda}</p>
+            <div className="poll-workspace">
+              {meetingComposerOpen && (
+                <div className="poll-composer">
+                  <div>
+                    <p className="eyebrow">MEETING SCHEDULE</p>
+                    <h3>Plan a meeting for {selectedVillage.name}</h3>
+                    <p>Set the date, time and agenda so members can prepare ahead of time.</p>
+                  </div>
+                  <input value={meetingTitle} onChange={(event) => setMeetingTitle(event.target.value)} placeholder="Meeting title" />
+                  <div className="poll-option-editor">
+                    <input value={meetingDate} onChange={(event) => setMeetingDate(event.target.value)} placeholder="Date" />
+                    <input value={meetingTime} onChange={(event) => setMeetingTime(event.target.value)} placeholder="Time" />
+                  </div>
+                  <input value={meetingAgenda} onChange={(event) => setMeetingAgenda(event.target.value)} placeholder="Agenda or purpose" />
+                  <button type="button" className="poll-primary" onClick={publishMeeting}>Save meeting</button>
                 </div>
-              ))}
+              )}
+
+              <div className="meeting-grid">
+                {visibleMeetings.map((meeting) => (
+                  <div key={meeting.id} className="meeting-card">
+                    <h4>{meeting.title}</h4>
+                    <p><strong>Date:</strong> {meeting.date}</p>
+                    <p><strong>Time:</strong> {meeting.time}</p>
+                    <p><strong>Host:</strong> {meeting.host}</p>
+                    <p><strong>Agenda:</strong> {meeting.agenda}</p>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 
           {selectedTab === "Polls" && (
-            <div className="poll-grid">
-              {selectedVillage.polls.map((poll) => (
+            <div className="poll-workspace">
+              {pollComposerOpen && <div className="poll-composer"><div><p className="eyebrow">COMMUNITY VOTE</p><h3>Host a vote for {selectedVillage.name}</h3><p>Ask one clear question and give members at least two choices.</p></div><input value={pollQuestion} onChange={(event) => setPollQuestion(event.target.value)} placeholder="What should the community decide?" /><div className="poll-option-editor">{pollOptions.map((option, index) => <input key={index} value={option} onChange={(event) => setPollOptions((current) => current.map((item, itemIndex) => itemIndex === index ? event.target.value : item))} placeholder={`Option ${index + 1}`} />)}</div><button type="button" className="poll-primary" onClick={publishPoll}>Publish vote</button></div>}
+              <div className="poll-grid">
+              {visiblePolls.map((poll) => (
                 <div key={poll.id} className="poll-card">
-                  <h4>{poll.question}</h4>
-                  <p>{poll.ends}</p>
+                  <div className="poll-card-head"><div><span className="poll-label">COMMUNITY VOTE</span><h4>{poll.question}</h4></div><span className="poll-status">{poll.ends}</span></div>
                   <div className="option-list">
                     {poll.options.map((option) => (
-                      <div key={option.id} className="option-row">
-                        <span>{option.label}</span>
+                      <button key={option.id} type="button" className={`option-row ${pollVotes[poll.id] === option.id ? "selected" : ""}`} onClick={() => voteInPoll(poll.id, option.id)} disabled={Boolean(pollVotes[poll.id])}>
+                        <span>{option.label}{pollVotes[poll.id] === option.id ? " · Your vote" : ""}</span>
                         <strong>{option.votes}</strong>
-                      </div>
+                      </button>
                     ))}
                   </div>
                 </div>
               ))}
+              </div>
             </div>
           )}
 
@@ -449,11 +665,17 @@ export default function CommunityDashboardPage() {
               </div>
               <div className="settings-card" style={{ gridColumn: "1 / -1" }}>
                 <h3>Moderator and admin powers</h3>
-                <p>Village Chairman and Youth Chairman are automatically community admins. They can appoint additional admins, adjust role access, manage member suspension, impose coin-based fines and restore access after payment.</p>
+                <p>Village leaders, youth leaders and assigned moderators are community admins. They can appoint additional admins, adjust role access, manage member suspension, impose coin-based fines and restore access after payment.</p>
+                {selectedMember ? (
+                  <div style={{ margin: "12px 0 0", padding: "10px 12px", border: "1px solid #edf2ee", borderRadius: 12, background: "#fafcfb" }}>
+                    <strong>{selectedMember.name}</strong>
+                    <div style={{ color: "#5d6d62", marginTop: 4 }}>{selectedMember.role} · {selectedMember.status}</div>
+                  </div>
+                ) : null}
                 <div className="admin-actions">
-                  <button type="button">Make admin</button>
-                  <button type="button" className="secondary">Suspend member</button>
-                  <button type="button" className="secondary">Apply fine</button>
+                  <button type="button" onClick={handleMakeAdmin} disabled={!selectedMember || selectedMember.isAdmin}>Already admin</button>
+                  <button type="button" className="secondary" onClick={handleSuspendMember} disabled={!selectedMember || selectedMember.status !== "Active"}>Suspend member</button>
+                  <button type="button" className="secondary" onClick={handleApplyFine}>Apply fine</button>
                 </div>
               </div>
             </div>

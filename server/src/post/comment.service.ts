@@ -1,4 +1,10 @@
-import { Injectable, ForbiddenException, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  ForbiddenException,
+  NotFoundException,
+  BadRequestException,
+  Logger,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
@@ -10,25 +16,34 @@ export class CommentService {
   /**
    * Create a new comment on a post
    */
-  async createComment(postId: string, authorId: string, content: string) {
+  async createComment(postId: string, authorId: string, content: string, parentId?: string, mediaUrl?: string, target: 'post' | 'group' | 'page' = 'post') {
     if (!content.trim()) {
       throw new BadRequestException('Comment content cannot be empty');
     }
 
     // Verify post exists
-    const post = await this.prisma.post.findUnique({
-      where: { id: postId },
-    });
+    const post = target === 'group'
+      ? await this.prisma.groupPost.findUnique({ where: { id: postId } })
+      : target === 'page'
+        ? await this.prisma.pagePost.findUnique({ where: { id: postId } })
+        : await this.prisma.post.findUnique({ where: { id: postId } });
 
     if (!post) {
       throw new NotFoundException('Post not found');
     }
 
+    if (parentId) {
+      const parent = await this.prisma.comment.findFirst({ where: { id: parentId, ...(target === 'group' ? { groupPostId: postId } : target === 'page' ? { pagePostId: postId } : { postId }) } });
+      if (!parent) throw new NotFoundException('Parent comment not found');
+    }
+
     // Create comment
     const comment = await this.prisma.comment.create({
       data: {
-        postId,
+        ...(target === 'group' ? { groupPostId: postId } : target === 'page' ? { pagePostId: postId } : { postId }),
         authorId,
+        parentId,
+        mediaUrl,
         content: content.trim(),
       },
       include: {
@@ -40,10 +55,13 @@ export class CommentService {
             profilePhoto: true,
           },
         },
+        reactions: true,
       },
     });
 
-    this.logger.log(`Comment ${comment.id} created on post ${postId} by ${authorId}`);
+    this.logger.log(
+      `Comment ${comment.id} created on post ${postId} by ${authorId}`,
+    );
 
     return comment;
   }
@@ -55,20 +73,21 @@ export class CommentService {
     postId: string,
     limit: number = 50,
     offset: number = 0,
+    target: 'post' | 'group' | 'page' = 'post',
   ) {
     // Verify post exists
-    const post = await this.prisma.post.findUnique({
-      where: { id: postId },
-    });
+    const post = target === 'group'
+      ? await this.prisma.groupPost.findUnique({ where: { id: postId } })
+      : target === 'page'
+        ? await this.prisma.pagePost.findUnique({ where: { id: postId } })
+        : await this.prisma.post.findUnique({ where: { id: postId } });
 
     if (!post) {
       throw new NotFoundException('Post not found');
     }
 
     const comments = await this.prisma.comment.findMany({
-      where: {
-        postId,
-      },
+      where: target === 'group' ? { groupPostId: postId } : target === 'page' ? { pagePostId: postId } : { postId },
       include: {
         author: {
           select: {
@@ -78,6 +97,7 @@ export class CommentService {
             profilePhoto: true,
           },
         },
+        reactions: true,
       },
       orderBy: {
         createdAt: 'desc',
@@ -87,6 +107,18 @@ export class CommentService {
     });
 
     return comments;
+  }
+
+  async toggleReaction(commentId: string, userId: string) {
+    const comment = await this.prisma.comment.findUnique({ where: { id: commentId } });
+    if (!comment) throw new NotFoundException('Comment not found');
+    const existing = await this.prisma.commentLike.findUnique({ where: { commentId_userId: { commentId, userId } } });
+    if (existing) {
+      await this.prisma.commentLike.delete({ where: { id: existing.id } });
+    } else {
+      await this.prisma.commentLike.create({ data: { commentId, userId } });
+    }
+    return { reacted: !existing, count: await this.prisma.commentLike.count({ where: { commentId } }) };
   }
 
   /**
@@ -166,7 +198,7 @@ export class CommentService {
   /**
    * Delete a comment (by author or post owner or moderator)
    */
-  async deleteComment(commentId: string, userId: string, userRole?: string) {
+  async deleteComment(commentId: string, userId: string, userRole?: string, target: 'post' | 'group' | 'page' = 'post') {
     const comment = await this.prisma.comment.findUnique({
       where: { id: commentId },
       include: {
@@ -176,6 +208,8 @@ export class CommentService {
             authorId: true,
           },
         },
+        groupPost: { select: { authorId: true } },
+        pagePost: { select: { authorId: true } },
       },
     });
 
@@ -185,7 +219,11 @@ export class CommentService {
 
     // Check permissions
     const isAuthor = comment.authorId === userId;
-    const isPostOwner = comment.post.authorId === userId;
+    const isPostOwner = target === 'group'
+      ? comment.groupPost?.authorId === userId
+      : target === 'page'
+        ? comment.pagePost?.authorId === userId
+        : comment.post?.authorId === userId;
     const isModerator = userRole === 'moderator' || userRole === 'admin';
 
     if (!isAuthor && !isPostOwner && !isModerator) {

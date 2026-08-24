@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { AppShell } from "../components/app-shell";
-import { createMarketplaceListing, fetchMarketplaceListings } from "../lib/api";
+import { createMarketplaceListing, fetchMarketplaceListings, getMarketplaceListings, getSession } from "../lib/api";
 
 const initialForm = {
   title: "",
@@ -15,16 +16,20 @@ const initialForm = {
 };
 
 export default function MarketplacePage() {
-  const [products, setProducts] = useState<Array<Record<string, any>>>([]);
+  const [products, setProducts] = useState<Array<Record<string, any>>>(() => getMarketplaceListings());
   const [form, setForm] = useState(initialForm);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [locationStatus, setLocationStatus] = useState("Use live location");
+  const [verificationMethod, setVerificationMethod] = useState("government-id");
+  const [sellerNotice, setSellerNotice] = useState("");
+  const session = getSession();
+  const sellerVerified = Boolean(session?.user?.isVerified || session?.user?.verificationStatus === "approved");
 
   useEffect(() => {
     let active = true;
 
     fetchMarketplaceListings().then((listings) => {
-      if (active) setProducts(listings);
+      if (active) setProducts(listings.length > 0 ? listings : getMarketplaceListings());
     }).catch(() => undefined);
 
     return () => {
@@ -67,6 +72,10 @@ export default function MarketplacePage() {
     const title = form.title.trim();
     const price = Number(form.price);
     if (!title || !price || price <= 0) return;
+    if (!sellerVerified) {
+      setSellerNotice("Marketplace selling requires an approved seller verification.");
+      return;
+    }
 
     setIsSubmitting(true);
     try {
@@ -85,6 +94,7 @@ export default function MarketplacePage() {
       setProducts((current) => [nextListing, ...current]);
       setForm({ ...initialForm, latitude: undefined, longitude: undefined });
       setLocationStatus("Use live location");
+      setSellerNotice(`Listing published using ${verificationMethod.replace("-", " ")} seller verification.`);
     } finally {
       setIsSubmitting(false);
     }
@@ -106,6 +116,7 @@ export default function MarketplacePage() {
 
         <form onSubmit={handleSubmit} className="panel-card marketplace-form">
           <h3>Sell something</h3>
+          {!sellerVerified ? <div className="seller-verification-alert">You must verify your identity before selling. <Link href="/verification">Start verification</Link></div> : <div className="seller-verification-row"><strong>Verified seller</strong><select value={verificationMethod} onChange={(event) => setVerificationMethod(event.target.value)} aria-label="Seller verification method"><option value="government-id">Government ID</option><option value="phone-and-email">Phone and email</option><option value="community-review">Community review</option></select></div>}
           <div className="marketplace-form-grid">
             <input value={form.title} onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))} placeholder="Item or service title" />
             <input value={form.price} onChange={(event) => setForm((current) => ({ ...current, price: event.target.value }))} type="number" min="1" placeholder="Price in ₦" />
@@ -127,20 +138,21 @@ export default function MarketplacePage() {
           </div>
           <textarea rows={3} value={form.description} onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))} placeholder="Give buyers a quick description" />
           <button className="button" type="submit" disabled={isSubmitting}>{isSubmitting ? "Publishing..." : "Publish listing"}</button>
+          {sellerNotice ? <p className="form-error" role="status">{sellerNotice}</p> : null}
         </form>
 
         <section className="listing-grid">
           {products.map((product: Record<string, any>) => (
             <article key={product.id} className="panel-card listing-card">
               <div className="listing-badge">{product.badge}</div>
-              <div className="listing-thumb">{product.category.slice(0, 2).toUpperCase()}</div>
+                <div className="listing-thumb">{product.sellerPhoto ? <img src={product.sellerPhoto} alt="Seller profile" /> : product.category.slice(0, 2).toUpperCase()}</div>
               <div className="listing-main">
                 <h3>{product.title}</h3>
                 <p className="listing-price">₦{Number(product.price).toLocaleString()}</p>
                 <p className="listing-meta">{product.category} · {product.location}</p>
                 <p className="listing-copy">{product.description}</p>
                 <div className="listing-footer">
-                  <span>Seller: {product.seller}</span>
+                  <span>Seller: {product.sellerUsername ? <Link href={`/profile/${product.sellerUsername}`} className="seller-link">{product.seller}</Link> : product.seller} {product.sellerVerified ? <span className="verified-mark" title="Verified seller">✓</span> : null}</span>
                   <button type="button">Contact seller</button>
                 </div>
               </div>
@@ -171,6 +183,12 @@ export default function MarketplacePage() {
         .listing-card { padding: 16px; display: grid; gap: 14px; }
         .listing-badge { justify-self: start; background: #eefaf0; color: #0f6738; border-radius: 999px; padding: 6px 10px; font-size: 0.7rem; font-weight: 800; text-transform: uppercase; }
         .listing-thumb { width: 58px; height: 58px; border-radius: 18px; background: linear-gradient(135deg, #dfeee1, #b7e2c0); display: grid; place-items: center; font-weight: 800; color: #124d2f; }
+        .listing-thumb img { width: 100%; height: 100%; border-radius: inherit; object-fit: cover; }
+        .seller-verification-alert, .seller-verification-row { padding: 12px; border-radius: 12px; background: #f3faf5; border: 1px solid #dcecdf; color: #315441; margin-bottom: 14px; }
+        .seller-verification-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+        .seller-verification-row select { width: auto; }
+        .seller-link { color: #0b6737; font-weight: 800; text-decoration: none; }
+        .verified-mark { display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; background: #157347; color: white; font-size: 12px; }
         .listing-main { display: grid; gap: 8px; }
         .listing-main h3 { margin: 0; font-size: 1.2rem; }
         .listing-price { margin: 0; font-size: 1.5rem; font-weight: 800; color: #0d4d2d; }

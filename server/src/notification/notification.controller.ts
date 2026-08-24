@@ -34,7 +34,12 @@ export class NotificationController {
     const limitNum = limit ? Math.min(parseInt(limit), 100) : 50;
     const offsetNum = offset ? parseInt(offset) : 0;
 
-    return this.notificationService.getNotifications(req.user.id, unreadOnlyBool, limitNum, offsetNum);
+    return this.notificationService.getNotifications(
+      req.user.id,
+      unreadOnlyBool,
+      limitNum,
+      offsetNum,
+    );
   }
 
   /**
@@ -62,7 +67,12 @@ export class NotificationController {
     const limitNum = limit ? Math.min(parseInt(limit), 100) : 50;
     const offsetNum = offset ? parseInt(offset) : 0;
 
-    return this.notificationService.getNotificationsByType(req.user.id, type, limitNum, offsetNum);
+    return this.notificationService.getNotificationsByType(
+      req.user.id,
+      type,
+      limitNum,
+      offsetNum,
+    );
   }
 
   /**
@@ -71,10 +81,7 @@ export class NotificationController {
    */
   @Put(':id/read')
   @UseGuards(JwtAuthGuard)
-  async markAsRead(
-    @Req() req: any,
-    @Param('id') notificationId: string,
-  ) {
+  async markAsRead(@Req() req: any, @Param('id') notificationId: string) {
     return this.notificationService.markAsRead(notificationId, req.user.id);
   }
 
@@ -98,7 +105,10 @@ export class NotificationController {
     @Req() req: any,
     @Param('id') notificationId: string,
   ) {
-    return this.notificationService.deleteNotification(notificationId, req.user.id);
+    return this.notificationService.deleteNotification(
+      notificationId,
+      req.user.id,
+    );
   }
 
   /**
@@ -136,7 +146,9 @@ export class NotificationController {
     }
 
     if (!body.userId || !body.type || !body.title || !body.message) {
-      throw new BadRequestException('userId, type, title, and message are required');
+      throw new BadRequestException(
+        'userId, type, title, and message are required',
+      );
     }
 
     const expiresAt = body.expiresAt ? new Date(body.expiresAt) : undefined;
@@ -183,7 +195,9 @@ export class NotificationController {
       !body.title ||
       !body.message
     ) {
-      throw new BadRequestException('userIds array, type, title, and message are required');
+      throw new BadRequestException(
+        'userIds array, type, title, and message are required',
+      );
     }
 
     return this.notificationService.broadcastNotification(

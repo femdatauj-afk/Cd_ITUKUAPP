@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
@@ -11,57 +15,54 @@ export class WalletService {
       throw new BadRequestException('Cannot send coins to yourself.');
     }
 
-    if (amount <= 0) {
+    if (!Number.isInteger(amount) || amount <= 0) {
       throw new BadRequestException('Amount must be greater than 0.');
     }
 
-    // Get sender wallet
-    const senderWallet = await this.prisma.wallet.findUnique({
-      where: { userId: senderId },
-    });
+    const result = await this.prisma.$transaction(async (tx) => {
+      const senderWallet = await tx.wallet.findUnique({
+        where: { userId: senderId },
+      });
+      if (!senderWallet)
+        throw new NotFoundException('Sender wallet not found.');
+      if (senderWallet.balance < amount)
+        throw new BadRequestException('Insufficient balance.');
 
-    if (!senderWallet) {
-      throw new NotFoundException('Sender wallet not found.');
-    }
+      const receiver = await tx.user.findUnique({ where: { id: receiverId } });
+      if (!receiver) throw new NotFoundException('Receiver not found.');
 
-    if (senderWallet.balance < amount) {
-      throw new BadRequestException('Insufficient balance.');
-    }
+      const receiverWallet = await tx.wallet.findUnique({
+        where: { userId: receiverId },
+      });
+      if (!receiverWallet)
+        throw new NotFoundException('Receiver wallet not found.');
 
-    // Get receiver
-    const receiver = await this.prisma.user.findUnique({
-      where: { id: receiverId },
-    });
+      const transaction = await tx.coinTransaction.create({
+        data: { senderId, receiverId, amount, status: 'completed' },
+      });
 
-    if (!receiver) {
-      throw new NotFoundException('Receiver not found.');
-    }
+      await tx.wallet.update({
+        where: { userId: senderId },
+        data: { balance: { decrement: amount } },
+      });
+      await tx.wallet.update({
+        where: { userId: receiverId },
+        data: { balance: { increment: amount } },
+      });
 
-    // Create transaction
-    const transaction = await this.prisma.coinTransaction.create({
-      data: {
-        senderId,
-        receiverId,
-        amount,
-        status: 'completed',
-      },
-    });
+      await tx.walletTransaction.createMany({
+        data: [
+          { userId: senderId, amount: -amount, type: 'transfer_debit', description: `Transfer to user ${receiverId}`, referenceId: transaction.id },
+          { userId: receiverId, amount, type: 'transfer_credit', description: `Transfer from user ${senderId}`, referenceId: transaction.id },
+        ],
+      });
 
-    // Update wallets
-    await this.prisma.wallet.update({
-      where: { userId: senderId },
-      data: { balance: { decrement: amount } },
-    });
-
-    await this.prisma.wallet.update({
-      where: { userId: receiverId },
-      data: { balance: { increment: amount } },
+      return { transaction, senderBalance: senderWallet.balance - amount };
     });
 
     return {
       success: true,
-      transaction,
-      senderBalance: senderWallet.balance - amount,
+      ...result,
     };
   }
 
@@ -72,8 +73,8 @@ export class WalletService {
     bankAccount: string,
     accountHolderName?: string,
   ) {
-    if (amount <= 0) {
-      throw new BadRequestException('Amount must be greater than 0.');
+    if (!Number.isInteger(amount) || amount <= 0) {
+      throw new BadRequestException('Amount must be a whole number greater than 0.');
     }
 
     if (!bankAccount || !bankAccount.trim()) {
@@ -93,26 +94,24 @@ export class WalletService {
       throw new BadRequestException('Insufficient balance for withdrawal.');
     }
 
-    // Create withdrawal request
-    const withdrawal = await this.prisma.withdrawal.create({
-      data: {
-        userId,
-        amount,
-        bankAccount: bankAccount.trim(),
-        status: 'pending',
-      },
-    });
-
-    // Deduct from balance (pending)
-    await this.prisma.wallet.update({
-      where: { userId },
-      data: { balance: { decrement: amount } },
+    const { withdrawal, remainingBalance } = await this.prisma.$transaction(async (tx) => {
+      const withdrawal = await tx.withdrawal.create({
+        data: { userId, amount, bankAccount: bankAccount.trim(), status: 'pending' },
+      });
+      const updatedWallet = await tx.wallet.update({
+        where: { userId },
+        data: { balance: { decrement: amount } },
+      });
+      await tx.walletTransaction.create({
+        data: { userId, amount: -amount, type: 'withdrawal_debit', description: 'Withdrawal request', referenceId: withdrawal.id },
+      });
+      return { withdrawal, remainingBalance: updatedWallet.balance };
     });
 
     return {
       success: true,
       withdrawal,
-      remainingBalance: wallet.balance - amount,
+      remainingBalance,
     };
   }
 
@@ -152,18 +151,19 @@ export class WalletService {
       throw new BadRequestException('Withdrawal is not pending.');
     }
 
-    // Refund coins to user
-    await this.prisma.wallet.update({
-      where: { userId: withdrawal.userId },
-      data: { balance: { increment: withdrawal.amount } },
-    });
-
-    const updated = await this.prisma.withdrawal.update({
-      where: { id: withdrawalId },
-      data: {
-        status: 'failed',
-        failureReason: reason,
-      },
+    const { updated } = await this.prisma.$transaction(async (tx) => {
+      await tx.wallet.update({
+        where: { userId: withdrawal.userId },
+        data: { balance: { increment: withdrawal.amount } },
+      });
+      await tx.walletTransaction.create({
+        data: { userId: withdrawal.userId, amount: withdrawal.amount, type: 'withdrawal_refund', description: `Withdrawal rejected: ${reason}`, referenceId: withdrawal.id },
+      });
+      const updated = await tx.withdrawal.update({
+        where: { id: withdrawalId },
+        data: { status: 'failed', failureReason: reason },
+      });
+      return { updated };
     });
 
     return { success: true, withdrawal: updated };
@@ -183,7 +183,11 @@ export class WalletService {
   }
 
   // Get user withdrawals
-  async getUserWithdrawals(userId: string, limit: number = 20, offset: number = 0) {
+  async getUserWithdrawals(
+    userId: string,
+    limit: number = 20,
+    offset: number = 0,
+  ) {
     const withdrawals = await this.prisma.withdrawal.findMany({
       where: { userId },
       orderBy: { createdAt: 'desc' },
@@ -217,7 +221,11 @@ export class WalletService {
   }
 
   // Get transaction history
-  async getTransactionHistory(userId: string, limit: number = 50, offset: number = 0) {
+  async getTransactionHistory(
+    userId: string,
+    limit: number = 50,
+    offset: number = 0,
+  ) {
     const transactions = await this.prisma.coinTransaction.findMany({
       where: {
         OR: [{ senderId: userId }, { receiverId: userId }],
@@ -251,6 +259,19 @@ export class WalletService {
     }));
   }
 
+  async getWalletLedger(
+    userId: string,
+    limit: number = 50,
+    offset: number = 0,
+  ) {
+    return this.prisma.walletTransaction.findMany({
+      where: { userId },
+      orderBy: { createdAt: 'desc' },
+      take: limit,
+      skip: offset,
+    });
+  }
+
   // Get wallet balance
   async getBalance(userId: string) {
     const wallet = await this.prisma.wallet.findUnique({
@@ -270,9 +291,15 @@ export class WalletService {
       throw new BadRequestException('Amount must be greater than 0.');
     }
 
-    const wallet = await this.prisma.wallet.update({
-      where: { userId },
-      data: { balance: { increment: amount } },
+    const { wallet } = await this.prisma.$transaction(async (tx) => {
+      const wallet = await tx.wallet.update({
+        where: { userId },
+        data: { balance: { increment: amount } },
+      });
+      await tx.walletTransaction.create({
+        data: { userId, amount, type: 'admin_credit', description: 'Administrative coin credit' },
+      });
+      return { wallet };
     });
 
     return { success: true, newBalance: wallet.balance };
@@ -290,8 +317,12 @@ export class WalletService {
       reason: string;
     },
   ) {
-    const targetUser = await this.prisma.user.findUnique({ where: { id: targetUserId } });
-    const adminUser = await this.prisma.user.findUnique({ where: { id: adminId } });
+    const targetUser = await this.prisma.user.findUnique({
+      where: { id: targetUserId },
+    });
+    const adminUser = await this.prisma.user.findUnique({
+      where: { id: adminId },
+    });
 
     if (!targetUser) {
       throw new NotFoundException('Target user not found.');
@@ -313,7 +344,9 @@ export class WalletService {
         });
 
         if (wallet.balance < amount) {
-          throw new BadRequestException('Target user does not have enough coins to pay the fine.');
+          throw new BadRequestException(
+            'Target user does not have enough coins to pay the fine.',
+          );
         }
 
         await this.prisma.wallet.update({
@@ -353,11 +386,12 @@ export class WalletService {
       });
     }
 
-    const message = normalizedAction === 'fine'
-      ? `${adminUser.fullName} has fined you ${amount} ItukuApp coins in ${payload.entityName}. Pay the fine to lift the restriction.`
-      : normalizedAction === 'suspend'
-        ? `${adminUser.fullName} has suspended your access in ${payload.entityName} for ${payload.durationLabel}.`
-        : `${adminUser.fullName} has banned your access from ${payload.entityName} for the stated violation.`;
+    const message =
+      normalizedAction === 'fine'
+        ? `${adminUser.fullName} has fined you ${amount} ItukuApp coins in ${payload.entityName}. Pay the fine to lift the restriction.`
+        : normalizedAction === 'suspend'
+          ? `${adminUser.fullName} has suspended your access in ${payload.entityName} for ${payload.durationLabel}.`
+          : `${adminUser.fullName} has banned your access from ${payload.entityName} for the stated violation.`;
 
     await this.prisma.message.create({
       data: {
@@ -380,7 +414,12 @@ export class WalletService {
         id: targetUser.id,
         fullName: targetUser.fullName,
         username: targetUser.username,
-        verificationStatus: normalizedAction === 'ban' ? 'banned' : normalizedAction === 'suspend' ? 'suspended' : targetUser.verificationStatus,
+        verificationStatus:
+          normalizedAction === 'ban'
+            ? 'banned'
+            : normalizedAction === 'suspend'
+              ? 'suspended'
+              : targetUser.verificationStatus,
       },
     };
   }
@@ -396,7 +435,9 @@ export class WalletService {
     }
 
     if (wallet.balance < amount) {
-      throw new BadRequestException('Insufficient wallet balance to pay the fine.');
+      throw new BadRequestException(
+        'Insufficient wallet balance to pay the fine.',
+      );
     }
 
     const updatedWallet = await this.prisma.wallet.update({

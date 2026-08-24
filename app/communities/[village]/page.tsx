@@ -4,8 +4,9 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { AppShell } from "../../components/app-shell";
+import { EntityNavigation } from "../../components/entity-navigation";
 import { communityDirectory } from "../../lib/community-directory";
-import { rankPostsForFeed, canUserComment } from "../../lib/moderation";
+import { rankPostsForFeed, canUserComment, addLocalNotification, addEntityAnnouncement } from "../../lib/moderation";
 
 type TabKey = "Overview" | "Posts" | "Admins" | "Members" | "Polls" | "Settings";
 
@@ -30,6 +31,16 @@ type CommunityPost = {
   reported: boolean;
 };
 
+type CommunityFine = {
+  id: string;
+  memberId: string;
+  memberName: string;
+  amount: number;
+  reason: string;
+  duration: string;
+  status: "Unpaid" | "Paid" | "Appeal pending" | "Overturned";
+};
+
 const defaultSettings = {
   allowPosting: true,
   inviteOnly: false,
@@ -51,6 +62,7 @@ export default function VillageCommunityPage() {
   }, [params.village]);
 
   const [community, setCommunity] = useState(() => cloneCommunity(selectedCommunity));
+  const [selectedMemberId, setSelectedMemberId] = useState(() => cloneCommunity(selectedCommunity).membersList[0]?.id ?? "");
   const [activeTab, setActiveTab] = useState<TabKey>("Overview");
   const [joined, setJoined] = useState(true);
   const [announcement, setAnnouncement] = useState("");
@@ -58,15 +70,34 @@ export default function VillageCommunityPage() {
   const [composerMedia, setComposerMedia] = useState<string | null>(null);
   const [composerMediaType, setComposerMediaType] = useState<"image" | "video" | "">("");
   const [memberNotice, setMemberNotice] = useState("");
+  const [fineComposerOpen, setFineComposerOpen] = useState(false);
+  const [fineAmount, setFineAmount] = useState("25");
+  const [fineReason, setFineReason] = useState("");
+  const [fineDuration, setFineDuration] = useState("Until fine is paid");
+  const [fines, setFines] = useState<CommunityFine[]>([]);
+  const [actionComposer, setActionComposer] = useState<"invite" | "event" | "share" | null>(null);
+  const [actionText, setActionText] = useState("");
+  const [pollComposerOpen, setPollComposerOpen] = useState(false);
+  const [pollQuestion, setPollQuestion] = useState("");
+  const [pollOptions, setPollOptions] = useState(["", ""]);
+  const [pollStartDate, setPollStartDate] = useState("");
+  const [pollStartTime, setPollStartTime] = useState("");
+  const [pollEndDate, setPollEndDate] = useState("");
+  const [pollEndTime, setPollEndTime] = useState("");
+  const [communityEditorOpen, setCommunityEditorOpen] = useState(false);
+  const [communityNameDraft, setCommunityNameDraft] = useState("");
+  const [communityMottoDraft, setCommunityMottoDraft] = useState("");
+  const [communitySummaryDraft, setCommunitySummaryDraft] = useState("");
+  const [communityRegionDraft, setCommunityRegionDraft] = useState("");
   const [posts, setPosts] = useState<CommunityPost[]>(() =>
-    cloneCommunity(selectedCommunity).feed.map((post: (typeof selectedCommunity.feed)[number]) => ({
+    cloneCommunity(selectedCommunity).feed.map((post: (typeof selectedCommunity.feed)[number], index: number) => ({
       id: post.id,
       author: post.author,
       role: post.role,
       text: post.text,
       time: post.time,
-      likes: 18 + Math.floor(Math.random() * 18),
-      shares: 4 + Math.floor(Math.random() * 9),
+      likes: 18 + ((post.id.length + index) % 15),
+      shares: 4 + ((post.id.length + index * 2) % 8),
       comments: [
         {
           id: `${post.id}-c1`,
@@ -86,16 +117,25 @@ export default function VillageCommunityPage() {
   ]);
 
   useEffect(() => {
-    setCommunity(cloneCommunity(selectedCommunity));
+    const raw = typeof window === "undefined" ? null : localStorage.getItem(`ituku-community-${selectedCommunity.slug}`);
+    let saved: { community?: Partial<typeof selectedCommunity>; settings?: Partial<typeof defaultSettings>; fines?: CommunityFine[] } = {};
+    try {
+      saved = raw ? JSON.parse(raw) : {};
+    } catch {
+      saved = {};
+    }
+    const nextCommunity = { ...cloneCommunity(selectedCommunity), ...(saved.community || {}) };
+    setCommunity(nextCommunity);
+    setSelectedMemberId(nextCommunity.membersList[0]?.id ?? "");
     setPosts(
-      cloneCommunity(selectedCommunity).feed.map((post: (typeof selectedCommunity.feed)[number]) => ({
+      nextCommunity.feed.map((post: (typeof selectedCommunity.feed)[number], index: number) => ({
         id: post.id,
         author: post.author,
         role: post.role,
         text: post.text,
         time: post.time,
-        likes: 18 + Math.floor(Math.random() * 18),
-        shares: 4 + Math.floor(Math.random() * 9),
+        likes: 18 + ((post.id.length + index) % 15),
+        shares: 4 + ((post.id.length + index * 2) % 8),
         comments: [
           {
             id: `${post.id}-c1`,
@@ -111,8 +151,25 @@ export default function VillageCommunityPage() {
     );
     setAnnouncement("");
     setActiveTab("Overview");
-    setSettings(defaultSettings);
+    setSettings({ ...defaultSettings, ...(saved.settings || {}) });
+    setFines(saved.fines || []);
   }, [selectedCommunity]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    localStorage.setItem(`ituku-community-${community.slug}`, JSON.stringify({
+      community: {
+        name: community.name,
+        summary: community.summary,
+        motto: community.motto,
+        region: community.region,
+        membersList: community.membersList,
+        polls: community.polls,
+      },
+      settings,
+      fines,
+    }));
+  }, [community, settings, fines]);
 
   const totalReactions = useMemo(
     () => posts.reduce((sum, post) => sum + post.likes + post.shares, 0),
@@ -138,6 +195,11 @@ export default function VillageCommunityPage() {
   }, [posts]);
 
   const handlePublishPost = () => {
+    if (!joined || !settings.allowPosting || (settings.adminOnlyAnnouncements && !selectedMember?.isAdmin)) {
+      setMemberNotice("You do not currently have permission to post in this community.");
+      window.setTimeout(() => setMemberNotice(""), 2800);
+      return;
+    }
     if (!announcement.trim() && !composerMedia) return;
 
     const newPost: CommunityPost = {
@@ -159,17 +221,76 @@ export default function VillageCommunityPage() {
     setActiveTab("Posts");
   };
 
-  const handleMemberAction = (action: "friend" | "message", personName: string) => {
-    setMemberNotice(action === "friend" ? `Friend request sent to ${personName}.` : `Message opened for ${personName}.`);
-    window.setTimeout(() => setMemberNotice(""), 2200);
+  const handleMemberAction = (action: "friend" | "message", personName: string, memberId?: string) => {
+    if (!memberId) {
+      setMemberNotice(action === "friend" ? `Friend request sent to ${personName}.` : `Message opened for ${personName}.`);
+      window.setTimeout(() => setMemberNotice(""), 2200);
+      return;
+    }
+
+    if (action === "friend") {
+      setCommunity((current) => ({
+        ...current,
+        membersList: current.membersList.map((member) =>
+          member.id === memberId ? { ...member, friendshipStatus: "friend" } : member,
+        ),
+      }));
+
+      const list = JSON.parse(localStorage.getItem("ituku-friends") || "[]");
+      const next = list.some((friend: { id: string }) => friend.id === memberId)
+        ? list
+        : [...list, { id: memberId, name: personName }];
+      localStorage.setItem("ituku-friends", JSON.stringify(next));
+      setMemberNotice(`${personName} was added to your friends.`);
+      window.setTimeout(() => setMemberNotice(""), 2400);
+      return;
+    }
+
+    localStorage.setItem("ituku-open-chat-user", JSON.stringify({ id: memberId, name: personName }));
+    window.location.href = "/chat";
+  };
+
+  const openCommunityEditor = () => {
+    setCommunityNameDraft(community.name);
+    setCommunityMottoDraft(community.motto);
+    setCommunitySummaryDraft(community.summary);
+    setCommunityRegionDraft(community.region);
+    setCommunityEditorOpen(true);
+  };
+
+  const saveCommunityDetails = () => {
+    const name = communityNameDraft.trim();
+    const motto = communityMottoDraft.trim();
+    const summary = communitySummaryDraft.trim();
+    const region = communityRegionDraft.trim();
+    if (!name || !motto || !summary || !region) return;
+    setCommunity((current) => ({ ...current, name, motto, summary, region }));
+    setCommunityEditorOpen(false);
   };
 
   const handleLike = (postId: string) => {
+    const likedPosts = JSON.parse(localStorage.getItem("ituku-liked-posts") || "[]");
+    if (Array.isArray(likedPosts) && likedPosts.includes(postId)) {
+      setPosts((current) => current.map((post) => post.id === postId ? { ...post, likes: Math.max(0, post.likes - 1) } : post));
+      localStorage.setItem("ituku-liked-posts", JSON.stringify(likedPosts.filter((id: string) => id !== postId)));
+      return;
+    }
+
     setPosts((current) =>
       current.map((post) =>
         post.id === postId ? { ...post, likes: post.likes + 1 } : post,
       ),
     );
+
+    localStorage.setItem("ituku-liked-posts", JSON.stringify(Array.isArray(likedPosts) ? [...likedPosts, postId] : [postId]));
+  };
+
+  const deleteCommunityPost = (postId: string) => {
+    setPosts((current) => current.filter((post) => post.id !== postId));
+  };
+
+  const deleteCommunityComment = (postId: string, commentId: string) => {
+    setPosts((current) => current.map((post) => post.id !== postId ? post : { ...post, comments: post.comments.filter((comment) => comment.id !== commentId) }));
   };
 
   const handleShare = (postId: string) => {
@@ -207,6 +328,101 @@ export default function VillageCommunityPage() {
     );
   };
 
+  const selectedMember = community.membersList.find((member) => member.id === selectedMemberId) ?? community.membersList[0];
+
+  const openFineComposer = () => {
+    if (!selectedMember) return;
+    setFineComposerOpen(true);
+    setFineReason("");
+  };
+
+  const handleMemberModerationAction = (action: "suspend" | "promote") => {
+    if (!selectedMember) return;
+
+    const publicMessage = action === "suspend"
+      ? `${selectedMember.name} was suspended for 2 weeks in ${community.name} for violating community rules.`
+      : `${selectedMember.name} was promoted to a leadership role in ${community.name}.`;
+
+    setCommunity((current) => ({
+      ...current,
+      membersList: current.membersList.map((member) => {
+        if (member.id !== selectedMember.id) return member;
+
+        if (action === "suspend") {
+          return { ...member, status: "Suspended 2 weeks" };
+        }
+
+        return { ...member, isAdmin: true, role: member.role === "Ordinary Member" ? "Youth Executive" : member.role };
+      }),
+    }));
+
+    const message = action === "suspend"
+      ? `${selectedMember.name} was suspended for 2 weeks.`
+      : `${selectedMember.name} was promoted to an admin role.`;
+
+    addLocalNotification(selectedMember.name, action === "suspend" ? "Community suspension" : "Community role update", publicMessage);
+    addEntityAnnouncement("community", community.name, publicMessage);
+
+    setMemberNotice(message);
+    window.setTimeout(() => setMemberNotice(""), 2200);
+  };
+
+  const submitFine = () => {
+    if (!selectedMember || !fineReason.trim()) return;
+    const amount = Number(fineAmount);
+    if (!Number.isFinite(amount) || amount <= 0) return;
+    const fine: CommunityFine = { id: `fine-${Date.now()}`, memberId: selectedMember.id, memberName: selectedMember.name, amount, reason: fineReason.trim(), duration: fineDuration, status: "Unpaid" };
+    const announcementMessage = `${selectedMember.name} was fined ${amount} coin in ${community.name} for: ${fineReason.trim()}. This is a public notice to the whole community.`;
+    setFines((current) => [fine, ...current]);
+    setCommunity((current) => ({ ...current, membersList: current.membersList.map((member) => member.id === selectedMember.id ? { ...member, fineDue: member.fineDue + amount, status: fineDuration === "Until fine is paid" ? "Suspended 2 weeks" : member.status } : member) }));
+    addLocalNotification(selectedMember.name, "Community fine issued", announcementMessage);
+    addEntityAnnouncement("community", community.name, announcementMessage);
+    setFineComposerOpen(false);
+    setMemberNotice(`${selectedMember.name} was fined ${amount} coin and restricted until settlement.`);
+    window.setTimeout(() => setMemberNotice(""), 2800);
+  };
+
+  const updateFineStatus = (fineId: string, status: CommunityFine["status"]) => {
+    setFines((current) => current.map((fine) => fine.id === fineId ? { ...fine, status } : fine));
+    if (status === "Paid" || status === "Overturned") {
+      const fine = fines.find((item) => item.id === fineId);
+      if (fine) setCommunity((current) => ({ ...current, membersList: current.membersList.map((member) => member.id === fine.memberId ? { ...member, fineDue: Math.max(0, member.fineDue - fine.amount), status: "Active" } : member) }));
+    }
+  };
+
+  const submitQuickAction = () => {
+    if (!actionText.trim() || !actionComposer) return;
+    setMemberNotice(actionComposer === "invite" ? `Invite sent to ${actionText.trim()}.` : actionComposer === "event" ? `Event created: ${actionText.trim()}.` : `Community update shared: ${actionText.trim()}.`);
+    setActionComposer(null);
+    setActionText("");
+    window.setTimeout(() => setMemberNotice(""), 2800);
+  };
+
+  const publishPoll = () => {
+    const question = pollQuestion.trim();
+    const options = pollOptions.filter((option) => option.trim());
+    if (!question || options.length < 2) return;
+    const startText = `${pollStartDate || "Today"}${pollStartTime ? ` at ${pollStartTime}` : ""}`;
+    const endText = `${pollEndDate || "7 days from now"}${pollEndTime ? ` at ${pollEndTime}` : ""}`;
+    setCommunity((current) => ({
+      ...current,
+      polls: [{
+        id: `poll-${Date.now()}`,
+        question,
+        ends: `From ${startText} to ${endText}`,
+        options: options.map((label, index) => ({ id: `option-${index}`, label: label.trim(), votes: 0 })),
+      }, ...current.polls],
+    }));
+    setPollQuestion("");
+    setPollOptions(["", ""]);
+    setPollStartDate("");
+    setPollStartTime("");
+    setPollEndDate("");
+    setPollEndTime("");
+    setPollComposerOpen(false);
+    setActiveTab("Polls");
+  };
+
   const handleReport = (target: "post" | "comment", postId: string, commentId?: string) => {
     setPosts((current) =>
       current.map((post) => {
@@ -236,6 +452,13 @@ export default function VillageCommunityPage() {
   };
 
   const handleVote = (pollId: string, optionId: string) => {
+    const votedPolls = JSON.parse(localStorage.getItem("ituku-voted-polls") || "[]");
+    if (Array.isArray(votedPolls) && votedPolls.includes(pollId)) {
+      setMemberNotice("You can vote once per poll.");
+      window.setTimeout(() => setMemberNotice(""), 2200);
+      return;
+    }
+
     setCommunity((current) => ({
       ...current,
       polls: current.polls.map((poll) =>
@@ -249,6 +472,7 @@ export default function VillageCommunityPage() {
             },
       ),
     }));
+    localStorage.setItem("ituku-voted-polls", JSON.stringify(Array.isArray(votedPolls) ? [...votedPolls, pollId] : [pollId]));
     setActiveTab("Polls");
   };
 
@@ -273,13 +497,17 @@ export default function VillageCommunityPage() {
         .community-hero {
           position: relative;
           overflow: hidden;
-          padding: 24px 24px 18px;
+          min-height: 340px;
+          display: flex;
+          align-items: flex-end;
+          padding: 0;
           border-radius: 28px;
-          background: linear-gradient(125deg, #0a3a29 0%, #0d7148 45%, #1fa36a 100%);
+          background: linear-gradient(135deg, #173b2b 0%, #1e7750 50%, #83a842 100%);
           box-shadow: 0 18px 32px rgba(9, 35, 25, 0.2);
           border: 1px solid rgba(255,255,255,0.14);
           color: white;
         }
+        .community-hero::before { content: ""; position: absolute; inset: 0; background: radial-gradient(circle at 76% 18%, rgba(255,255,255,.24), transparent 22%), linear-gradient(135deg, rgba(5,28,18,.08), rgba(5,28,18,.38)); }
         .community-hero::after {
           content: "";
           position: absolute;
@@ -293,10 +521,14 @@ export default function VillageCommunityPage() {
         .hero-row {
           position: relative;
           z-index: 1;
-          display: flex;
+          width: 100%;
+          display: grid;
+          grid-template-columns: minmax(0, 1fr) auto;
           justify-content: space-between;
-          align-items: flex-end;
+          align-items: end;
           gap: 18px;
+          padding: 34px 26px 26px;
+          background: linear-gradient(90deg, rgba(5, 22, 14, .92), rgba(5, 22, 14, .7) 62%, rgba(5, 22, 14, .22));
         }
         .eyebrow {
           display: inline-block;
@@ -309,9 +541,13 @@ export default function VillageCommunityPage() {
         }
         .community-hero h2 {
           margin: 0;
+          max-width: 760px;
+          overflow-wrap: anywhere;
+          color: #fff;
           font-size: clamp(2.2rem, 5vw, 3.6rem);
           line-height: 1;
           letter-spacing: -0.06em;
+          text-shadow: 0 2px 18px rgba(0,0,0,.55);
         }
         .hero-subtext {
           margin: 12px 0 0;
@@ -344,6 +580,8 @@ export default function VillageCommunityPage() {
           gap: 10px;
           margin-top: 18px;
         }
+        .community-editor { display: grid; gap: 10px; margin-top: 18px; padding-top: 18px; border-top: 1px solid rgba(255,255,255,.2); }
+        .community-editor input, .community-editor textarea { width: 100%; border: 1px solid rgba(255,255,255,.35); border-radius: 12px; padding: 10px 12px; font: inherit; background: rgba(255,255,255,.96); color: #163024; }
         .primary-button,
         .secondary-button,
         .ghost-button,
@@ -792,6 +1030,8 @@ export default function VillageCommunityPage() {
           font-size: 13px;
           line-height: 1.6;
         }
+        .action-dialog { display: grid; gap: 10px; margin-bottom: 14px; padding: 16px; border: 1px solid #dce9df; border-radius: 16px; background: #f7fbf8; }
+        .action-dialog input, .action-dialog select, .action-dialog textarea { width: 100%; border: 1px solid #dfe9e0; border-radius: 10px; padding: 10px 12px; font: inherit; background: #fff; }
         @media (max-width: 920px) {
           .content-grid {
             grid-template-columns: 1fr;
@@ -801,6 +1041,7 @@ export default function VillageCommunityPage() {
           }
           .hero-row {
             flex-direction: column;
+            grid-template-columns: 1fr;
             align-items: flex-start;
           }
           .hero-actions {
@@ -810,12 +1051,13 @@ export default function VillageCommunityPage() {
       `}</style>
 
       <AppShell title={community.name} subtitle={`${community.members.toLocaleString()} members · ${community.online} online · ${community.summary}`}>
+        <EntityNavigation basePath={`/communities/${params.village}`} active={activeTab === "Posts" ? "Posts" : activeTab === "Members" ? "Members" : activeTab === "Settings" ? "Settings" : "Overview"} manageHref={`/communities/community-dashboard?community=${encodeURIComponent(community.slug)}&tab=Settings`} />
         <div className="community-page">
-          <section className="community-hero">
+          <section className="community-hero" aria-labelledby="community-title">
             <div className="hero-row">
               <div>
                 <p className="eyebrow">Community group</p>
-                <h2>{community.name}</h2>
+                <h2 id="community-title">{community.name}</h2>
                 <p className="hero-subtext">{community.motto} — built for meetings, updates, village coordination, member welfare and trusted community discussions.</p>
                 <div className="hero-meta">
                   <span className="hero-pill">{community.region}</span>
@@ -825,13 +1067,27 @@ export default function VillageCommunityPage() {
               </div>
 
               <div className="hero-actions">
+                <button type="button" className="secondary-button" onClick={openCommunityEditor}>Edit community</button>
                 <button type="button" className="primary-button" onClick={() => setJoined((value) => !value)}>
                   {joined ? "Joined ✓" : "Join community"}
                 </button>
-                <button type="button" className="secondary-button">Invite</button>
-                <button type="button" className="secondary-button">Share</button>
+                <button type="button" className="secondary-button" onClick={() => setActionComposer("invite")}>Invite</button>
+                <button type="button" className="secondary-button" onClick={() => setActionComposer("share")}>Share</button>
               </div>
             </div>
+            {communityEditorOpen ? (
+              <div className="community-editor">
+                <strong>Edit community identity</strong>
+                <input value={communityNameDraft} onChange={(event) => setCommunityNameDraft(event.target.value)} placeholder="Community name" />
+                <input value={communityRegionDraft} onChange={(event) => setCommunityRegionDraft(event.target.value)} placeholder="Region" />
+                <input value={communityMottoDraft} onChange={(event) => setCommunityMottoDraft(event.target.value)} placeholder="Village motto" />
+                <textarea value={communitySummaryDraft} onChange={(event) => setCommunitySummaryDraft(event.target.value)} placeholder="Community summary" rows={3} />
+                <div className="hero-actions">
+                  <button type="button" className="primary-button" onClick={saveCommunityDetails}>Save changes</button>
+                  <button type="button" className="secondary-button" onClick={() => setCommunityEditorOpen(false)}>Cancel</button>
+                </div>
+              </div>
+            ) : null}
           </section>
 
           <div className="community-stats">
@@ -855,6 +1111,39 @@ export default function VillageCommunityPage() {
               </button>
             ))}
           </div>
+
+          {actionComposer ? (
+            <div className="action-dialog">
+              <strong>{actionComposer === "invite" ? "Invite someone to this community" : actionComposer === "event" ? "Create a community event" : "Share a community update"}</strong>
+              <input value={actionText} onChange={(event) => setActionText(event.target.value)} placeholder={actionComposer === "invite" ? "Username or email" : actionComposer === "event" ? "Event title" : "What would you like to share?"} />
+              <div className="admin-tools">
+                <button type="button" className="tiny-button success" onClick={submitQuickAction}>Submit</button>
+                <button type="button" className="tiny-button" onClick={() => setActionComposer(null)}>Cancel</button>
+              </div>
+            </div>
+          ) : null}
+
+          {fineComposerOpen ? (
+            <div className="action-dialog">
+              <strong>Issue a community fine</strong>
+              <p style={{ margin: 0, color: "#536a60" }}>The selected member will be restricted until the fine is paid or an appeal is upheld.</p>
+              <select value={selectedMemberId} onChange={(event) => setSelectedMemberId(event.target.value)}>
+                {community.membersList.map((member) => <option key={member.id} value={member.id}>{member.name}</option>)}
+              </select>
+              <input type="number" min="1" step="1" value={fineAmount} onChange={(event) => setFineAmount(event.target.value)} placeholder="Fine amount in coin" />
+              <select value={fineDuration} onChange={(event) => setFineDuration(event.target.value)}>
+                <option>Until fine is paid</option>
+                <option>2 weeks</option>
+                <option>3 months</option>
+                <option>1 year</option>
+              </select>
+              <textarea value={fineReason} onChange={(event) => setFineReason(event.target.value)} placeholder="Reason for this fine" rows={3} />
+              <div className="admin-tools">
+                <button type="button" className="tiny-button warning" onClick={submitFine}>Issue fine</button>
+                <button type="button" className="tiny-button" onClick={() => setFineComposerOpen(false)}>Cancel</button>
+              </div>
+            </div>
+          ) : null}
 
           <div className="content-grid">
             <div className="feed-column">
@@ -936,9 +1225,10 @@ export default function VillageCommunityPage() {
                       <p className="post-text">{post.text}</p>
 
                       <div className="post-actions">
-                        <button type="button" onClick={() => handleLike(post.id)}>👍 Like · {post.likes}</button>
+                        <button type="button" onClick={() => handleLike(post.id)}>👍 {JSON.parse(typeof window === "undefined" ? "[]" : localStorage.getItem("ituku-liked-posts") || "[]").includes(post.id) ? "Unlike" : "Like"} · {post.likes}</button>
                         <button type="button" onClick={() => handleShare(post.id)}>↗ Share · {post.shares}</button>
                         <button type="button" onClick={() => handleReport("post", post.id)}>⚑ Report</button>
+                        {post.author === "You" ? <button type="button" onClick={() => deleteCommunityPost(post.id)}>Delete post</button> : null}
                       </div>
 
                       <div className="comment-box">
@@ -970,6 +1260,7 @@ export default function VillageCommunityPage() {
                               <div className="post-actions" style={{ borderTop: "none", paddingTop: 0 }}>
                                 <button type="button">👍 {comment.likes}</button>
                                 <button type="button" onClick={() => handleReport("comment", post.id, comment.id)}>⚑ Report</button>
+                                {comment.author === "You" ? <button type="button" onClick={() => deleteCommunityComment(post.id, comment.id)}>Delete</button> : null}
                               </div>
                             </div>
                           ))}
@@ -1019,8 +1310,8 @@ export default function VillageCommunityPage() {
                         </div>
                         <div className="admin-tools">
                           <span className={member.status.includes("Suspended") ? "status-pill alert" : member.isAdmin ? "status-pill" : "status-pill warn"}>{member.status}</span>
-                          <button type="button" className="tiny-button" onClick={() => handleMemberAction("friend", member.name)}>Add friend</button>
-                          <button type="button" className="tiny-button" onClick={() => handleMemberAction("message", member.name)}>Message</button>
+                          <button type="button" className="tiny-button" onClick={() => handleMemberAction("friend", member.name, member.id)}>{member.friendshipStatus === "friend" ? "Friend ✓" : "Add friend"}</button>
+                          <button type="button" className="tiny-button" onClick={() => handleMemberAction("message", member.name, member.id)}>Message</button>
                         </div>
                       </div>
                     ))}
@@ -1030,6 +1321,10 @@ export default function VillageCommunityPage() {
 
               {activeTab === "Polls" && (
                 <div className="poll-list">
+                  <div className="panel-card">
+                    <button type="button" className="primary-button" onClick={() => setPollComposerOpen((current) => !current)}>Create poll</button>
+                    {pollComposerOpen ? <div className="action-dialog" style={{ marginTop: 12 }}><input value={pollQuestion} onChange={(event) => setPollQuestion(event.target.value)} placeholder="Ask the community a question" /><div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8 }}><input type="date" value={pollStartDate} onChange={(event) => setPollStartDate(event.target.value)} /><input type="time" value={pollStartTime} onChange={(event) => setPollStartTime(event.target.value)} /></div><div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8 }}><input type="date" value={pollEndDate} onChange={(event) => setPollEndDate(event.target.value)} /><input type="time" value={pollEndTime} onChange={(event) => setPollEndTime(event.target.value)} /></div>{pollOptions.map((option, index) => <input key={index} value={option} onChange={(event) => setPollOptions((current) => current.map((item, itemIndex) => itemIndex === index ? event.target.value : item))} placeholder={`Choice ${index + 1}`} />)}<div className="admin-tools"><button type="button" className="tiny-button success" onClick={publishPoll}>Publish poll</button><button type="button" className="tiny-button" onClick={() => setPollComposerOpen(false)}>Cancel</button></div></div> : null}
+                  </div>
                   {community.polls.map((poll) => (
                     <div key={poll.id} id={`poll-${poll.id}`} className="poll-card">
                       <h3>{poll.question}</h3>
@@ -1094,6 +1389,23 @@ export default function VillageCommunityPage() {
                       <li>Queue suspicious content for admin review while preserving evidence.</li>
                     </ul>
                   </div>
+                  {fines.length > 0 ? (
+                    <div className="settings-card">
+                      <h3>Fine and appeal register</h3>
+                      <div className="member-list">
+                        {fines.map((fine) => (
+                          <div key={fine.id} className="member-item">
+                            <div><strong>{fine.memberName} · {fine.amount} coin</strong><span>{fine.reason} · {fine.status}</span></div>
+                            <div className="admin-tools">
+                              {fine.status === "Unpaid" ? <button type="button" className="tiny-button" onClick={() => updateFineStatus(fine.id, "Appeal pending")}>Appeal</button> : null}
+                              {fine.status === "Unpaid" ? <button type="button" className="tiny-button success" onClick={() => updateFineStatus(fine.id, "Paid")}>Mark paid</button> : null}
+                              {fine.status === "Appeal pending" ? <button type="button" className="tiny-button success" onClick={() => updateFineStatus(fine.id, "Overturned")}>Uphold appeal</button> : null}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
               )}
             </div>
@@ -1102,9 +1414,10 @@ export default function VillageCommunityPage() {
               <div className="panel-card">
                 <h3>Community access</h3>
                 <div className="admin-tools">
-                  <button type="button" className="tiny-button success">Invite</button>
-                  <button type="button" className="tiny-button">Create event</button>
-                  <button type="button" className="tiny-button">Share update</button>
+                  <button type="button" className="tiny-button success" onClick={() => setActionComposer("invite")}>Invite</button>
+                  <button type="button" className="tiny-button" onClick={() => setActionComposer("event")}>Create event</button>
+                  <button type="button" className="tiny-button" onClick={() => setActionComposer("share")}>Share update</button>
+                  <button type="button" className="tiny-button" onClick={() => { setPollComposerOpen(true); setActiveTab("Polls"); }}>Create poll</button>
                 </div>
               </div>
 
@@ -1121,10 +1434,21 @@ export default function VillageCommunityPage() {
 
               <div className="member-card">
                 <h3>Admin actions</h3>
+                {community.membersList.length > 0 ? (
+                  <select
+                    value={selectedMemberId}
+                    onChange={(event) => setSelectedMemberId(event.target.value)}
+                    style={{ width: "100%", marginBottom: 12, padding: "0.7rem 0.8rem", borderRadius: 12, border: "1px solid #dfe9e0" }}
+                  >
+                    {community.membersList.map((member) => (
+                      <option key={member.id} value={member.id}>{member.name}</option>
+                    ))}
+                  </select>
+                ) : null}
                 <div className="admin-tools">
-                  <button type="button" className="tiny-button success">Suspend</button>
-                  <button type="button" className="tiny-button warning">Fine 25 coin</button>
-                  <button type="button" className="tiny-button">Promote member</button>
+                  <button type="button" className="tiny-button success" onClick={() => handleMemberModerationAction("suspend")}>Suspend</button>
+                  <button type="button" className="tiny-button warning" onClick={openFineComposer}>Fine member</button>
+                  <button type="button" className="tiny-button" onClick={() => handleMemberModerationAction("promote")}>Promote member</button>
                 </div>
               </div>
 

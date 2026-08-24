@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ConflictException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
@@ -117,13 +121,18 @@ export class PostService {
 
     const friendships = await this.prisma.friendship.findMany({
       where: {
-        OR: [{ userId, status: 'accepted' }, { friendId: userId, status: 'accepted' }],
+        OR: [
+          { userId, status: 'accepted' },
+          { friendId: userId, status: 'accepted' },
+        ],
       },
       select: { userId: true, friendId: true },
     });
 
     const followedIds = following.map((f) => f.followedId);
-    const friendIds = friendships.map((f) => (f.userId === userId ? f.friendId : f.userId));
+    const friendIds = friendships.map((f) =>
+      f.userId === userId ? f.friendId : f.userId,
+    );
     const allIds = [...new Set([userId, ...followedIds, ...friendIds])]; // Include self posts
 
     const posts = await this.prisma.post.findMany({
@@ -386,6 +395,63 @@ export class PostService {
     });
 
     return { success: true };
+  }
+
+  async savePost(postId: string, userId: string) {
+    const post = await this.prisma.post.findUnique({ where: { id: postId } });
+    if (!post) throw new NotFoundException('Post not found.');
+
+    try {
+      await this.prisma.savedPost.create({ data: { postId, userId } });
+    } catch (error) {
+      if (error.code === 'P2002')
+        throw new ConflictException('Post is already saved.');
+      throw error;
+    }
+
+    return { success: true };
+  }
+
+  async unsavePost(postId: string, userId: string) {
+    const savedPost = await this.prisma.savedPost.findUnique({
+      where: { postId_userId: { postId, userId } },
+    });
+    if (!savedPost) throw new NotFoundException('Saved post not found.');
+
+    await this.prisma.savedPost.delete({ where: { id: savedPost.id } });
+    return { success: true };
+  }
+
+  async getSavedPosts(userId: string) {
+    const savedPosts = await this.prisma.savedPost.findMany({
+      where: { userId },
+      orderBy: { createdAt: 'desc' },
+      include: {
+        post: {
+          include: {
+            author: {
+              select: {
+                id: true,
+                username: true,
+                fullName: true,
+                profilePhoto: true,
+              },
+            },
+            _count: { select: { comments: true, likes: true, shares: true } },
+          },
+        },
+      },
+    });
+
+    return savedPosts.map(({ createdAt, post }) => ({
+      ...post,
+      savedAt: createdAt,
+      stats: {
+        commentsCount: post._count.comments,
+        likesCount: post._count.likes,
+        sharesCount: post._count.shares,
+      },
+    }));
   }
 
   // Delete post (owner only)

@@ -21,7 +21,11 @@ export class QueueService {
   /**
    * Enqueue a new job
    */
-  enqueueJob(type: string, payload: any, maxRetries: number = this.defaultMaxRetries): string {
+  enqueueJob(
+    type: string,
+    payload: any,
+    maxRetries: number = this.defaultMaxRetries,
+  ): string {
     if (!this.queue.has(type)) {
       this.queue.set(type, []);
     }
@@ -89,7 +93,12 @@ export class QueueService {
   /**
    * Requeue a failed job if retries remain
    */
-  requeueJob(jobId: string, type: string, payload: any, retries: number): boolean {
+  requeueJob(
+    jobId: string,
+    type: string,
+    payload: any,
+    retries: number,
+  ): boolean {
     if (retries >= this.defaultMaxRetries) {
       this.logger.warn(`Job ${jobId} exceeded max retries`);
       return false;
@@ -124,8 +133,13 @@ export class QueueService {
     this.queue.forEach((jobs, type) => {
       stats[type] = {
         queued: jobs.length,
-        processing: Array.from(this.processing).filter((id) => id.startsWith(type)).length,
-        total: jobs.length + Array.from(this.processing).filter((id) => id.startsWith(type)).length,
+        processing: Array.from(this.processing).filter((id) =>
+          id.startsWith(type),
+        ).length,
+        total:
+          jobs.length +
+          Array.from(this.processing).filter((id) => id.startsWith(type))
+            .length,
       };
     });
 

@@ -2,8 +2,9 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { io, type Socket } from "socket.io-client";
 import { AppShell } from "../components/app-shell";
-import { fetchCommunityUsers, getSeededUsers } from "../lib/api";
+import { deleteChatMessage, editChatMessage, fetchChatDetail, fetchCommunityUsers, getSeededUsers, getSession, openDirectChat, sendChatMessage, startChatCall, updateChatCall } from "../lib/api";
 
 type FriendStatus = "online" | "away" | "offline";
 
@@ -36,6 +37,8 @@ type Message = {
   deleted?: boolean;
   reactions?: Reaction[];
   readBy?: { id: string; avatar: string; name: string }[];
+  replyTo?: { id: string; text: string };
+  highlighted?: boolean;
 };
 
 const reactionOptions = ["👍", "❤️", "😂", "🔥", "🎉"];
@@ -71,6 +74,7 @@ export default function ChatPage() {
   const initialSeed = useMemo(() => buildConversationSeed(), []);
   const [friends, setFriends] = useState<Friend[]>(initialSeed.displayUsers);
   const [activeFriendId, setActiveFriendId] = useState<string>(initialSeed.displayUsers[0]?.id ?? "");
+  const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [messagesByFriend, setMessagesByFriend] = useState<Record<string, Message[]>>(() => {
     const initial: Record<string, Message[]> = {};
     for (const friend of initialSeed.displayUsers) {
@@ -88,6 +92,12 @@ export default function ChatPage() {
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [mobileConversationOpen, setMobileConversationOpen] = useState(false);
   const [reactionPickerFor, setReactionPickerFor] = useState<string | null>(null);
+  const [replyTo, setReplyTo] = useState<Message | null>(null);
+  const [callNotice, setCallNotice] = useState("");
+  const [activeCall, setActiveCall] = useState<"voice" | "video" | null>(null);
+  const [incomingCall, setIncomingCall] = useState<{ callId?: string; fromUsername?: string; callType?: "voice" | "video" } | null>(null);
+  const [activeCallId, setActiveCallId] = useState<string | null>(null);
+  const socketRef = useRef<Socket | null>(null);
   const audioInputRef = useRef<HTMLInputElement | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -100,6 +110,24 @@ export default function ChatPage() {
         if (!active) return;
         const nextSeed = buildConversationSeed(users);
         setFriends(nextSeed.displayUsers);
+
+        const preferredChatUser = (() => {
+          if (typeof window === "undefined") return null;
+          try {
+            const raw = localStorage.getItem("ituku-open-chat-user");
+            return raw ? JSON.parse(raw) : null;
+          } catch {
+            return null;
+          }
+        })();
+
+        if (preferredChatUser) {
+          const match = nextSeed.displayUsers.find((friend) => friend.id === preferredChatUser.id || friend.name === preferredChatUser.name);
+          if (match) {
+            setActiveFriendId(match.id);
+          }
+        }
+
         setActiveFriendId((current) => current || nextSeed.displayUsers[0]?.id || "");
         setMessagesByFriend((previous) => {
           const nextState = { ...previous };
@@ -117,6 +145,22 @@ export default function ChatPage() {
       active = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const saved = JSON.parse(localStorage.getItem("ituku-chat-messages") || "{}");
+      if (saved && typeof saved === "object") setMessagesByFriend(saved);
+    } catch {
+      setMessagesByFriend({});
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      localStorage.setItem("ituku-chat-messages", JSON.stringify(messagesByFriend));
+    }
+  }, [messagesByFriend]);
 
   useEffect(() => {
     if (!recording) return;
@@ -170,7 +214,33 @@ export default function ChatPage() {
     }
   };
 
-  const addMessage = (text?: string, audioUrl?: string) => {
+  useEffect(() => {
+    const token = getSession()?.token;
+    if (!token || !activeFriendId) return;
+    let active = true;
+    openDirectChat(activeFriendId)
+      .then((conversation) => fetchChatDetail(conversation.id).then((detail) => ({ conversation, detail })))
+      .then(({ conversation, detail }) => {
+        if (!active) return;
+        setActiveConversationId(conversation.id);
+        const mapped: Message[] = detail.messages.map((message) => ({
+          id: message.id,
+          senderId: message.senderId === getSession()?.user?.id ? "me" : message.senderId,
+          text: message.deletedAt ? "This message was deleted" : message.content,
+          createdAt: new Date(message.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+          day: new Date(message.createdAt).toLocaleDateString(),
+          edited: Boolean(message.editedAt),
+          deleted: Boolean(message.deletedAt),
+          reactions: [],
+          replyTo: message.replyTo ? { id: message.replyTo.id, text: message.replyTo.content } : undefined,
+        }));
+        setMessagesByFriend((previous) => ({ ...previous, [activeFriendId]: mapped }));
+      })
+      .catch(() => undefined);
+    return () => { active = false; };
+  }, [activeFriendId]);
+
+  const addMessage = async (text?: string, audioUrl?: string) => {
     if (!text && !audioUrl) return;
 
     const nextMessage: Message = {
@@ -185,7 +255,17 @@ export default function ChatPage() {
       deleted: false,
       reactions: [],
       readBy: [],
+      replyTo: replyTo ? { id: replyTo.id, text: replyTo.text ?? "Voice note" } : undefined,
     };
+
+    if (text && activeConversationId && getSession()?.token) {
+      try {
+        const saved = await sendChatMessage({ conversationId: activeConversationId, content: text, replyToMessageId: replyTo?.id });
+        nextMessage.id = saved.id;
+      } catch {
+        // Keep the local message when the API is unavailable.
+      }
+    }
 
     setMessagesByFriend((previous) => ({
       ...previous,
@@ -193,6 +273,7 @@ export default function ChatPage() {
     }));
 
     setDraft("");
+    setReplyTo(null);
   };
 
   const sendMessage = () => {
@@ -201,7 +282,7 @@ export default function ChatPage() {
     addMessage(trimmed);
   };
 
-  const editMessage = (messageId: string) => {
+  const editMessage = async (messageId: string) => {
     const current = messages.find((message) => message.id === messageId);
     if (!current) return;
 
@@ -211,6 +292,7 @@ export default function ChatPage() {
     const safeValue = nextValue.trim();
     if (!safeValue) return;
 
+    if (getSession()?.token && activeConversationId) await editChatMessage(messageId, safeValue).catch(() => undefined);
     setMessagesByFriend((previous) => ({
       ...previous,
       [activeFriendId]: (previous[activeFriendId] ?? []).map((message) =>
@@ -221,13 +303,21 @@ export default function ChatPage() {
     }));
   };
 
-  const deleteMessage = (messageId: string) => {
+  const deleteMessage = async (messageId: string) => {
+    if (getSession()?.token && activeConversationId) await deleteChatMessage(messageId).catch(() => undefined);
     setMessagesByFriend((previous) => ({
       ...previous,
       [activeFriendId]: (previous[activeFriendId] ?? []).map((message) =>
         message.id === messageId ? { ...message, deleted: true, text: "This message was deleted" } : message,
       ),
     }));
+  };
+
+  const clearConversation = () => {
+    if (!window.confirm(`Delete this chat with ${activeFriend.name}?`)) return;
+    setMessagesByFriend((previous) => ({ ...previous, [activeFriendId]: [] }));
+    setCallNotice(`Chat with ${activeFriend.name} was deleted on this device.`);
+    window.setTimeout(() => setCallNotice(""), 2500);
   };
 
   const toggleReaction = (messageId: string, emoji: string) => {
@@ -266,6 +356,44 @@ export default function ChatPage() {
 
     setReactionPickerFor(null);
   };
+
+  const toggleHighlight = (messageId: string) => {
+    setMessagesByFriend((previous) => ({
+      ...previous,
+      [activeFriendId]: (previous[activeFriendId] ?? []).map((message) => message.id === messageId ? { ...message, highlighted: !message.highlighted } : message),
+    }));
+  };
+
+  const startCall = async (kind: "voice" | "video") => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: kind === "video" });
+      stream.getTracks().forEach((track) => track.stop());
+      const session = getSession();
+      if (session?.token) {
+        const conversation = await openDirectChat(activeFriend.id);
+        const call = await startChatCall(conversation.id, kind === "video" ? "VIDEO" : "VOICE");
+        setActiveCallId(call.id);
+        socketRef.current?.emit("call:notify", { targetUserId: activeFriend.id, callId: call.id, callType: kind, conversationId: conversation.id });
+        setCallNotice(`${kind === "video" ? "Video" : "Voice"} call is ringing ${activeFriend.name}.`);
+      } else {
+        setCallNotice(`${kind === "video" ? "Video" : "Voice"} call started locally with ${activeFriend.name}.`);
+      }
+      setActiveCall(kind);
+    } catch {
+      setCallNotice(`${kind === "video" ? "Video" : "Voice"} call is ready, but device permission was not granted.`);
+    }
+    window.setTimeout(() => setCallNotice(""), 3500);
+  };
+
+  useEffect(() => {
+    const token = getSession()?.token;
+    if (!token) return;
+    const socket = io(process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:4000", { auth: { token }, transports: ["websocket", "polling"] });
+    socketRef.current = socket;
+    socket.on("call:incoming", (call: { callId?: string; fromUsername?: string; callType?: "voice" | "video" }) => setIncomingCall(call));
+    socket.on("call:ended", () => { setActiveCall(null); setIncomingCall(null); });
+    return () => { socket.disconnect(); socketRef.current = null; };
+  }, []);
 
   const markMessagesAsSeen = () => {
     setMessagesByFriend((previous) => ({
@@ -479,10 +607,10 @@ export default function ChatPage() {
             </div>
 
             <div className="thread-actions">
-              <button type="button" className="action-button subtle">
+              <button type="button" className="action-button subtle" onClick={() => startCall("voice")}>
                 📞 Call
               </button>
-              <button type="button" className="action-button subtle">
+              <button type="button" className="action-button subtle" onClick={() => startCall("video")}>
                 📹 Video
               </button>
               <button type="button" className="action-button" onClick={() => setSettingsOpen((value) => !value)}>
@@ -519,8 +647,13 @@ export default function ChatPage() {
                 <span>Privacy mode</span>
                 <span className="setting-tag">Friends only</span>
               </div>
+              <div className="setting-row"><span>Delete chat</span><button type="button" className="danger-action" onClick={clearConversation}>Delete</button></div>
             </div>
           ) : null}
+
+          {incomingCall ? <div className="call-notice" role="alert"><span>Incoming {incomingCall.callType || "voice"} call from {incomingCall.fromUsername || activeFriend.name}</span><button type="button" onClick={async () => { if (incomingCall.callId) await updateChatCall(incomingCall.callId, "ACCEPTED").catch(() => undefined); setActiveCall(incomingCall.callType || "voice"); setActiveCallId(incomingCall.callId || null); setIncomingCall(null); }}>Accept</button><button type="button" onClick={async () => { if (incomingCall.callId) await updateChatCall(incomingCall.callId, "REJECTED").catch(() => undefined); setIncomingCall(null); }}>Decline</button></div> : null}
+          {callNotice ? <div className="call-notice" role="status">{callNotice}<button type="button" onClick={async () => { if (activeCallId) await updateChatCall(activeCallId, "ENDED").catch(() => undefined); setActiveCall(null); setActiveCallId(null); setCallNotice(""); }}>End</button></div> : null}
+          {activeCall ? <div className="call-banner">{activeCall === "video" ? "📹" : "📞"} {activeCall} call with {activeFriend.name}</div> : null}
 
           <section className="message-panel">
             {groupedMessages.map((group) => (
@@ -533,7 +666,7 @@ export default function ChatPage() {
                   const isMine = message.senderId === "me";
 
                   return (
-                    <div key={message.id} className={isMine ? "message-row mine" : "message-row"}>
+                    <div key={message.id} className={`${isMine ? "message-row mine" : "message-row"}${message.highlighted ? " highlighted-message" : ""}`}>
                       <div className="message-bubble-wrap">
                         <div className={isMine ? "message-bubble mine" : "message-bubble"}>
                           {message.deleted ? (
@@ -566,6 +699,8 @@ export default function ChatPage() {
                             </>
                           )}
 
+                          {message.replyTo ? <div className="reply-preview">Replying to: {message.replyTo.text}</div> : null}
+
                           {isMine && !message.deleted ? (
                             <div className="message-hover-actions">
                               <button type="button" onClick={() => editMessage(message.id)}>
@@ -579,6 +714,7 @@ export default function ChatPage() {
                               </button>
                             </div>
                           ) : null}
+                          {!message.deleted ? <div className="message-hover-actions message-tools"><button type="button" onClick={() => setReplyTo(message)}>Reply</button><button type="button" onClick={() => toggleHighlight(message.id)}>{message.highlighted ? "Unhighlight" : "Highlight"}</button>{!isMine ? <button type="button" onClick={() => setReactionPickerFor(message.id)}>React</button> : null}</div> : null}
                         </div>
 
                         {reactionPickerFor === message.id ? (
@@ -624,6 +760,7 @@ export default function ChatPage() {
           </div>
 
           <footer className="composer-box mobile-floating">
+            {replyTo ? <div className="reply-composer"><span>Replying to: {replyTo.text}</span><button type="button" onClick={() => setReplyTo(null)}>Cancel</button></div> : null}
             <div className="composer-controls">
               <button type="button" className="round-button" aria-label="Upload audio" onClick={() => audioInputRef.current?.click()}>
                 🎵

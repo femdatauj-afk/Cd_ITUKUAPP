@@ -1,4 +1,10 @@
-import { Injectable, NotFoundException, ForbiddenException, BadRequestException, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ForbiddenException,
+  BadRequestException,
+  Logger,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
@@ -151,7 +157,12 @@ export class GroupPostService {
   /**
    * Update a post
    */
-  async updatePost(postId: string, userId: string, content?: string, photo?: string) {
+  async updatePost(
+    postId: string,
+    userId: string,
+    content?: string,
+    photo?: string,
+  ) {
     this.logger.log(`Updating post ${postId} by user ${userId}`);
 
     const post = await this.prisma.groupPost.findUnique({

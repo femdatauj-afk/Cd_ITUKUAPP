@@ -1,12 +1,18 @@
 ﻿"use client";
 
 import Image from "next/image";
+import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { AppShell } from "../components/app-shell";
+import { ItukuCoinAmount } from "../components/ituku-coin";
 import coverImage from "../../ITUKUAPP HOMEPAGE.png";
 import avatarImage from "../../HENRY-OF-ITUKU PICTURE.jpeg";
 import {
   clearSession,
+  createPost,
+  fetchWalletBalance,
+  fetchUserFollowers,
+  fetchUserFollowing,
   getCoverPhoto,
   getProfilePhoto,
   getProfileSettings,
@@ -15,6 +21,7 @@ import {
   saveProfilePhoto,
   saveProfileSettings,
   saveSession,
+  uploadFile,
   updateProfile,
 } from "../lib/api";
 
@@ -196,8 +203,21 @@ export default function ProfilePage() {
   const [avatarPreview, setAvatarPreview] = useState<string | null>(getProfilePhoto());
   const [coverPreview, setCoverPreview] = useState<string | null>(getCoverPhoto());
   const [liveLocation, setLiveLocation] = useState("Location not shared");
+  const [postDraft, setPostDraft] = useState("");
+  const [postFile, setPostFile] = useState<File | null>(null);
+  const [postPreview, setPostPreview] = useState<string | null>(null);
+  const [publishingPost, setPublishingPost] = useState(false);
+  const [postNotice, setPostNotice] = useState("");
+  const [connectionsOpen, setConnectionsOpen] = useState<"followers" | "following" | null>(null);
+  const [connections, setConnections] = useState<Array<{ id: string; username: string; fullName: string; profilePhoto?: string | null; bio?: string | null; isFollowedBack?: boolean }>>([]);
+  const [connectionsLoading, setConnectionsLoading] = useState(false);
+  const [connectionsError, setConnectionsError] = useState("");
   const avatarInputRef = useRef<HTMLInputElement>(null);
   const coverInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    fetchWalletBalance().then(({ balance }) => setProfile((current) => ({ ...current, walletBalance: balance }))).catch(() => undefined);
+  }, []);
 
   useEffect(() => {
     saveProfileSettings({
@@ -235,6 +255,50 @@ export default function ProfilePage() {
 
   const updateForm = (field: string, value: string) => {
     setForm((current) => ({ ...current, [field]: value }));
+  };
+
+  const openConnections = async (type: "followers" | "following") => {
+    setConnectionsOpen(type);
+    setConnectionsLoading(true);
+    setConnectionsError("");
+    try {
+      const people = type === "followers" ? await fetchUserFollowers(String(getSession()?.user?.id || "")) : await fetchUserFollowing(String(getSession()?.user?.id || ""));
+      setConnections(people);
+    } catch (error) {
+      setConnections([]);
+      setConnectionsError(error instanceof Error ? error.message : `Unable to load ${type}.`);
+    } finally {
+      setConnectionsLoading(false);
+    }
+  };
+
+  const selectPostFile = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setPostFile(file);
+    setPostPreview(URL.createObjectURL(file));
+  };
+
+  const publishPost = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!postDraft.trim() && !postFile) return;
+    setPublishingPost(true);
+    setPostNotice("");
+    const content = postDraft.trim() || "Shared a photo with the Ituku community.";
+    try {
+      const mediaUrl = postFile ? (await uploadFile(postFile, "posts")).data.url : undefined;
+      const created = await createPost(content, mediaUrl);
+      setPostCards((current) => [{ id: created.id, title: "New post", text: content, reactions: { likes: 0, comments: 0, shares: 0 } }, ...current]);
+      setPostNotice("Published successfully.");
+    } catch (error) {
+      setPostCards((current) => [{ id: `local-post-${Date.now()}`, title: "New post", text: content, reactions: { likes: 0, comments: 0, shares: 0 } }, ...current]);
+      setPostNotice(error instanceof Error ? `${error.message} Saved locally.` : "Saved locally. Sign in to publish to the community.");
+    } finally {
+      setPostDraft("");
+      setPostFile(null);
+      setPostPreview(null);
+      setPublishingPost(false);
+    }
   };
 
   const handleLogout = () => {
@@ -309,6 +373,13 @@ export default function ProfilePage() {
     if (activeTab === "Posts") {
       return (
         <div className="post-list">
+          <form className="profile-composer" onSubmit={publishPost}>
+            <div className="story-head"><div className="story-avatar">{profile.fullName.slice(0, 2).toUpperCase()}</div><div><strong>Share with your community</strong><small>Post an update from your profile</small></div></div>
+            <textarea value={postDraft} onChange={(event) => setPostDraft(event.target.value)} placeholder={`What is happening in ${profile.village}?`} rows={3} />
+            {postPreview ? <img className="composer-preview" src={postPreview} alt="Selected post media preview" /> : null}
+            <div className="composer-actions"><label className="button-secondary" htmlFor="profile-post-media">Add photo or video</label><input id="profile-post-media" type="file" accept="image/*,video/*" onChange={selectPostFile} /><button className="button" type="submit" disabled={publishingPost || (!postDraft.trim() && !postFile)}>{publishingPost ? "Publishing..." : "Publish"}</button></div>
+            {postNotice ? <p className="profile-save-message" role="status">{postNotice}</p> : null}
+          </form>
           {postCards.map((post) => (
             <article key={post.id} className="story-card">
               <div className="story-head">
@@ -413,6 +484,8 @@ export default function ProfilePage() {
         .profile-bio { margin-top: 14px; color: #465146; line-height: 1.65; max-width: 60ch; }
         .profile-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border-top: 1px solid #edf1ed; border-bottom: 1px solid #edf1ed; margin-top: 18px; padding: 16px 0; }
         .profile-stats div { text-align: center; }
+        .profile-stat-button { display: block; width: 100%; border: 0; background: transparent; color: inherit; text-align: center; cursor: pointer; }
+        .profile-stat-button:hover strong, .profile-stat-button:focus-visible strong { color: #0f6738; }
         .profile-stats strong { display: block; font-size: 1.4rem; }
         .profile-stats span { color: #68766c; font-size: 0.76rem; text-transform: uppercase; letter-spacing: 0.12em; }
         .profile-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 20px; }
@@ -434,6 +507,13 @@ export default function ProfilePage() {
         .story-card h3 { margin: 0 0 8px; }
         .story-card p { margin: 0; color: #4d5a4f; line-height: 1.7; }
         .story-actions { display: flex; gap: 18px; margin-top: 14px; color: #536155; font-size: 0.83rem; }
+        .profile-composer { display: grid; gap: 14px; padding: 18px; border: 1px solid #dfe9df; border-radius: 18px; background: #fbfefb; }
+        .profile-composer textarea { width: 100%; resize: vertical; border: 1px solid #d9e5da; border-radius: 12px; padding: 12px; font: inherit; color: #1d2b22; background: #fff; }
+        .composer-actions { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+        .composer-actions input { display: none; }
+        .composer-preview { width: 100%; max-height: 260px; object-fit: cover; border-radius: 14px; border: 1px solid #e1ebe2; }
+        .profile-save-message { margin: 0; color: #0f6738; font-size: 0.82rem; font-weight: 700; }
+        .composer-actions button:disabled { opacity: 0.5; cursor: not-allowed; }
         .photo-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
         .photo-tile { height: 120px; border-radius: 18px; background: linear-gradient(135deg, #dcefe0, #b2ddb0); display: grid; place-items: center; font-size: 2.2rem; color: #0d4d2d; border: 1px solid #dfeae0; }
         .resource-item { display: flex; align-items: center; gap: 12px; background: #f9faf8; border: 1px solid #ebefe9; border-radius: 14px; padding: 14px 16px; }
@@ -473,6 +553,7 @@ export default function ProfilePage() {
         .check-list { display: grid; gap: 12px; }
         .mini-list { display: grid; gap: 12px; }
         .mini-item { display: flex; align-items: center; justify-content: space-between; gap: 14px; background: #fafbf9; border: 1px solid #ebefe9; border-radius: 12px; padding: 12px 14px; }
+        .profile-coin-mark { display: inline-grid; width: 1.2em; height: 1.2em; place-items: center; border: 1.5px solid currentColor; border-radius: 50%; font-family: Georgia, serif; line-height: 1; }
         .mini-item button { border: 0; border-radius: 999px; background: #eefaf0; color: #0f6738; padding: 8px 10px; font-weight: 700; cursor: pointer; }
         .hidden { display: none; }
         @media (max-width: 980px) {
@@ -524,10 +605,10 @@ export default function ProfilePage() {
                 <p className="profile-bio">{profile.bio}</p>
 
                 <div className="profile-stats">
-                  <div><strong>{profile.posts}</strong><span>Posts</span></div>
-                  <div><strong>{profile.groups}</strong><span>Groups</span></div>
-                  <div><strong>{profile.followers}</strong><span>Followers</span></div>
-                  <div><strong>{profile.following}</strong><span>Following</span></div>
+                  <button className="profile-stat-button" type="button" onClick={() => setActiveTab("Posts")}><strong>{profile.posts}</strong><span>Posts</span></button>
+                  <button className="profile-stat-button" type="button" onClick={() => setActiveTab("Groups")}><strong>{profile.groups}</strong><span>Groups</span></button>
+                  <button className="profile-stat-button" type="button" onClick={() => openConnections("followers")}><strong>{profile.followers}</strong><span>Followers</span></button>
+                  <button className="profile-stat-button" type="button" onClick={() => openConnections("following")}><strong>{profile.following}</strong><span>Following</span></button>
                 </div>
 
                 <div className="profile-actions">
@@ -564,8 +645,8 @@ export default function ProfilePage() {
                   <button className="menu-button" type="button" onClick={() => setSettingsSection("community")}>📄 My Pages</button>
                   <button className="menu-button" type="button" onClick={() => setSettingsSection("support")}>💬 Saved Posts</button>
                   <button className="menu-button" type="button" onClick={() => setSettingsSection("support")}>🔖 Saved Items</button>
-                  <button className="menu-button" type="button">👥 Followers</button>
-                  <button className="menu-button" type="button">➕ Following</button>
+                  <button className="menu-button" type="button" onClick={() => openConnections("followers")}>👥 Followers</button>
+                  <button className="menu-button" type="button" onClick={() => openConnections("following")}>➕ Following</button>
                   <button className="menu-button" type="button" onClick={() => setSettingsSection("wallet")}>💰 Wallet</button>
                   <button className="menu-button" type="button">🪙 Buy Coins</button>
                   <button className="menu-button" type="button" onClick={() => setSettingsSection("account")}>⚙️ Settings</button>
@@ -799,7 +880,7 @@ export default function ProfilePage() {
                 <div className="section-card">
                   <h4>Wallet & Coins</h4>
                   <div className="mini-list">
-                    <div className="mini-item"><span>Coin Balance</span><strong>{profile.walletBalance} coins</strong></div>
+                    <div className="mini-item"><span>Ituku Coin Balance</span><strong><ItukuCoinAmount amount={profile.walletBalance} /></strong></div>
                     <div className="mini-item"><span>Buy Coins</span><button type="button">Top up</button></div>
                     <div className="mini-item"><span>Transaction History</span><button type="button">View</button></div>
                   </div>
@@ -936,6 +1017,21 @@ export default function ProfilePage() {
             </div>
           </div>
         )}
+
+        {connectionsOpen && (
+          <div className="modal-overlay" onClick={() => setConnectionsOpen(null)}>
+            <div className="connections-panel" role="dialog" aria-modal="true" aria-labelledby="connections-title" onClick={(event) => event.stopPropagation()}>
+              <div className="connections-head">
+                <div><p className="eyebrow">YOUR NETWORK</p><h3 id="connections-title">{connectionsOpen === "followers" ? "Followers" : "Following"}</h3></div>
+                <button className="close-connections" type="button" onClick={() => setConnectionsOpen(null)} aria-label="Close connections">×</button>
+              </div>
+              {connectionsLoading ? <p className="connections-state">Loading {connectionsOpen}...</p> : null}
+              {!connectionsLoading && connectionsError ? <p className="connections-state connections-error">{connectionsError}</p> : null}
+              {!connectionsLoading && !connectionsError && connections.length === 0 ? <p className="connections-state">No {connectionsOpen} yet.</p> : null}
+              {!connectionsLoading && !connectionsError && connections.length > 0 ? <div className="connections-list">{connections.map((person) => <Link className="connection-item" href={`/profile/${person.username}`} key={person.id} onClick={() => setConnectionsOpen(null)}><span className="connection-avatar">{person.fullName.slice(0, 2).toUpperCase()}</span><span><strong>{person.fullName}</strong><small>@{person.username}</small>{person.bio ? <small>{person.bio}</small> : null}</span></Link>)}</div> : null}
+            </div>
+          </div>
+        )}
       </AppShell>
 
       <style jsx global>{`
@@ -977,6 +1073,19 @@ export default function ProfilePage() {
         .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; }
         .confirm-box { width: min(420px, 100%); }
         .confirm-box p { color: #4f5d52; line-height: 1.7; }
+        .connections-panel { width: min(560px, 100%); max-height: min(78vh, 680px); overflow: auto; background: #fff; border-radius: 24px; padding: 22px; border: 1px solid #e5eee4; box-shadow: 0 20px 40px rgba(11, 34, 21, 0.12); }
+        .connections-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
+        .connections-head h3 { margin: 0; font-size: 1.5rem; color: #1d3027; }
+        .connections-head .eyebrow { margin-bottom: 6px; }
+        .close-connections { border: 0; background: #f1f7f1; color: #355440; width: 34px; height: 34px; border-radius: 50%; font-size: 22px; cursor: pointer; }
+        .connections-list { display: grid; gap: 8px; }
+        .connection-item { display: flex; align-items: flex-start; gap: 12px; padding: 12px; border-radius: 14px; color: #1d3027; }
+        .connection-item:hover { background: #f3f8f3; }
+        .connection-avatar { display: grid; place-items: center; width: 44px; height: 44px; flex: 0 0 auto; border-radius: 50%; background: linear-gradient(135deg, #d9ead9, #a9d7b3); color: #123f2a; font-weight: 800; }
+        .connection-item strong, .connection-item small { display: block; }
+        .connection-item small { margin-top: 3px; color: #69776d; font-size: 0.78rem; }
+        .connections-state { margin: 24px 0 10px; color: #5c6a60; text-align: center; }
+        .connections-error { color: #a2281a; }
       `}</style>
     </>
   );

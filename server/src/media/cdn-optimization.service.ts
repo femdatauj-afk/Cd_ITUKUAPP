@@ -87,7 +87,10 @@ export class CdnOptimizationService {
   /**
    * Calculate compression savings
    */
-  calculateCompressionSavings(originalSize: number, compressedSize: number): {
+  calculateCompressionSavings(
+    originalSize: number,
+    compressedSize: number,
+  ): {
     ratio: number;
     percentReduction: number;
     savedBytes: number;
@@ -180,13 +183,17 @@ export class CdnOptimizationService {
 
       if (width && height) {
         if (width > 2000 || height > 2000) {
-          recommendations.push('Image dimensions are large - consider resizing for web delivery');
+          recommendations.push(
+            'Image dimensions are large - consider resizing for web delivery',
+          );
           potentialSavings += fileSize * 0.25; // Additional 25% savings from resize
         }
       }
     } else if (mimeType.startsWith('video/')) {
       recommendations.push('Video files should use adaptive bitrate streaming');
-      recommendations.push('Consider HLS or DASH format for streaming delivery');
+      recommendations.push(
+        'Consider HLS or DASH format for streaming delivery',
+      );
     }
 
     return {

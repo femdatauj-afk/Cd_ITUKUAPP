@@ -46,7 +46,11 @@ export class RateLimitService {
   /**
    * Check if request is allowed
    */
-  isAllowed(key: string): { allowed: boolean; remaining: number; resetTime: number } {
+  isAllowed(key: string): {
+    allowed: boolean;
+    remaining: number;
+    resetTime: number;
+  } {
     const now = Date.now();
     let record = this.records.get(key);
 
@@ -144,7 +148,8 @@ export class RateLimitService {
   getStats() {
     return {
       totalRecords: this.records.size,
-      blockedRecords: Array.from(this.records.values()).filter((r) => r.blocked).length,
+      blockedRecords: Array.from(this.records.values()).filter((r) => r.blocked)
+        .length,
       windowMs: this.config.windowMs,
       maxRequests: this.config.maxRequests,
     };

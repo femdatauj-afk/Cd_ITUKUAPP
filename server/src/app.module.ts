@@ -20,8 +20,11 @@ import { MediaModule } from './media/media.module';
 import { SecurityModule } from './security/security.module';
 import { NotificationWorker } from './workers/notification.worker';
 import { IndexingWorker } from './workers/indexing.worker';
+import { RedisModule } from './redis/redis.module';
+import { StoryModule } from './story/story.module';
 
 const featureModules = [
+  RedisModule,
   SecurityModule,
   AuthModule,
   UserModule,
@@ -38,6 +41,7 @@ const featureModules = [
   HealthModule,
   ObservabilityModule,
   MediaModule,
+  StoryModule,
 ];
 
 @Module({

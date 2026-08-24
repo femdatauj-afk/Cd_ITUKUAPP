@@ -3,6 +3,7 @@ export type CommunityRole =
   | "Village Executive"
   | "Youth Chairman"
   | "Youth Executive"
+  | "Moderator"
   | "Ordinary Member";
 
 export type CommunityMember = {
@@ -13,6 +14,7 @@ export type CommunityMember = {
   status: "Active" | "Suspended 2 weeks" | "Suspended 3 months" | "Suspended 1 year";
   coinBalance: number;
   fineDue: number;
+  friendshipStatus?: "pending" | "friend";
 };
 
 export type CommunityMeeting = {
@@ -56,12 +58,12 @@ export type CommunityRecord = {
   feed: CommunityFeedPost[];
 };
 
-export const communityDirectory: CommunityRecord[] = [
+const seededCommunityDirectory: CommunityRecord[] = [
   {
     slug: "amokolo",
     name: "Amokolo",
     summary: "Village unity, development and social coordination across households and youth programmes.",
-    members: 1842,
+    members: 1,
     online: 214,
     region: "Central District",
     motto: "One village, one progress plan.",
@@ -107,7 +109,7 @@ export const communityDirectory: CommunityRecord[] = [
     slug: "umukulu",
     name: "Umukulu",
     summary: "Family, learning and enterprise alignment across the wider Umukulu network.",
-    members: 2060,
+    members: 1,
     online: 188,
     region: "South District",
     motto: "Knowledge, care and shared growth.",
@@ -152,7 +154,7 @@ export const communityDirectory: CommunityRecord[] = [
     slug: "ugwunagbo",
     name: "Ugwunagbo",
     summary: "Community leadership, stewardship and inclusive membership support.",
-    members: 1725,
+    members: 1,
     online: 156,
     region: "West District",
     motto: "Civic care that keeps everyone connected.",
@@ -197,7 +199,7 @@ export const communityDirectory: CommunityRecord[] = [
     slug: "okwenachala",
     name: "Okwenachala",
     summary: "Connected community planning for civic action, youth growth and local welfare.",
-    members: 1984,
+    members: 1,
     online: 203,
     region: "East District",
     motto: "Unity in service and progress.",
@@ -242,7 +244,7 @@ export const communityDirectory: CommunityRecord[] = [
     slug: "ofeinyi",
     name: "Ofeinyi",
     summary: "Community leadership, collaboration and social care for homes, businesses and youth.",
-    members: 2148,
+    members: 1,
     online: 229,
     region: "Northwest District",
     motto: "Strong homes, better futures.",
@@ -287,7 +289,7 @@ export const communityDirectory: CommunityRecord[] = [
     slug: "amata",
     name: "Amata",
     summary: "Shared living, youth mobilisation and village support across households and families.",
-    members: 1765,
+    members: 1,
     online: 171,
     region: "Central East",
     motto: "One community, many hands.",
@@ -332,7 +334,7 @@ export const communityDirectory: CommunityRecord[] = [
     slug: "umunevonta",
     name: "Umunevonta",
     summary: "Civic engagement, youth motivation and village support with careful moderation.",
-    members: 1922,
+    members: 1,
     online: 174,
     region: "Southwest District",
     motto: "Progress rooted in belonging.",
@@ -377,7 +379,7 @@ export const communityDirectory: CommunityRecord[] = [
     slug: "umuowoh",
     name: "Umuowoh",
     summary: "Responsive village management, contribution, welfare and progress tracking.",
-    members: 1665,
+    members: 1,
     online: 152,
     region: "Western District",
     motto: "Strong voices, shared action.",
@@ -422,7 +424,7 @@ export const communityDirectory: CommunityRecord[] = [
     slug: "umuonyiba",
     name: "Umuonyiba",
     summary: "Shared leadership, community learning and village-wide civic participation.",
-    members: 1850,
+    members: 1,
     online: 169,
     region: "North District",
     motto: "Care, courage and steady progress.",
@@ -464,3 +466,41 @@ export const communityDirectory: CommunityRecord[] = [
     ],
   },
 ];
+
+const assignedModerators: Record<string, string> = {
+  amokolo: "Amokolo Community Moderator",
+  umukulu: "Umukulu Community Moderator",
+  ugwunagbo: "Ugwunagbo Community Moderator",
+  okwenachala: "Okwenachala Community Moderator",
+  ofeinyi: "Ofeinyi Community Moderator",
+  amata: "Amata Community Moderator",
+  umunevonta: "Umunevonta Community Moderator",
+  umuowoh: "Umuowoh Community Moderator",
+  umuonyiba: "Umuonyiba Community Moderator",
+};
+
+export const communityDirectory: CommunityRecord[] = seededCommunityDirectory.map((community) => {
+  const moderatorEntry = {
+    id: `moderator-${community.slug}`,
+    name: assignedModerators[community.slug] || `Moderator ${community.name}`,
+    role: "Moderator" as const,
+    isAdmin: true,
+    status: "Active" as const,
+    coinBalance: 1_000_000,
+    fineDue: 0,
+  };
+
+  const mergedMembers = [...community.membersList, moderatorEntry];
+
+  return {
+    ...community,
+    members: mergedMembers.length,
+    online: community.online,
+    coinBalance: mergedMembers.reduce((sum, member) => sum + member.coinBalance, 0),
+    reservedPositions: [
+      ...community.reservedPositions,
+      { title: "Moderator", admin: true, description: "Supports community safety, reports and platform guidance." },
+    ],
+    membersList: mergedMembers,
+  };
+});

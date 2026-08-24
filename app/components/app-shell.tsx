@@ -1,12 +1,18 @@
+"use client";
+
 import Image from "next/image";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import logoImage from "../../ITUKUAPP LOGO.png";
+import { clearSession, fetchNotifications, fetchWalletBalance, getSession } from "../lib/api";
+import { ItukuCoinIcon } from "./ituku-coin";
 
 type NavItem = {
   href: string;
   label: string;
-  icon: "home" | "friends" | "videos" | "birthday" | "events" | "marketplace" | "pages" | "groups" | "settings" | "user" | "plus" | "logout" | "switch" | "invite" | "dashboard";
+  icon: "home" | "friends" | "videos" | "birthday" | "events" | "marketplace" | "pages" | "groups" | "settings" | "user" | "plus" | "logout" | "switch" | "invite" | "dashboard" | "coin";
 };
 
 const navigation: NavItem[] = [
@@ -18,17 +24,17 @@ const navigation: NavItem[] = [
   { href: "/groups", label: "Groups", icon: "groups" },
   { href: "/pages", label: "Pages", icon: "pages" },
   { href: "/communities/community-dashboard", label: "Community Hub", icon: "events" },
-  { href: "/about", label: "Settings", icon: "settings" },
-  { href: "/auth/register", label: "Add account", icon: "plus" },
-  { href: "/auth/login", label: "Log out", icon: "logout" },
+  { href: "/communities", label: "Communities", icon: "events" },
+  { href: "/wallet", label: "Wallet", icon: "coin" },
+  { href: "/settings", label: "Settings", icon: "settings" },
 ];
 
 const headerQuickLinks: { href: string; label: string; icon: NavItem["icon"] }[] = [
   { href: "/feed", label: "Home", icon: "home" },
   { href: "/friends", label: "Friends", icon: "friends" },
   { href: "/chat", label: "Inbox", icon: "videos" },
-  { href: "/marketplace", label: "Alerts", icon: "marketplace" },
-  { href: "/groups", label: "Menu", icon: "user" },
+  { href: "/notifications", label: "Notifications", icon: "invite" },
+  { href: "/wallet", label: "Wallet", icon: "coin" },
 ];
 
 const mobileDock: { href: string; label: string; icon: NavItem["icon"] }[] = [
@@ -87,6 +93,14 @@ function AppIcon({ type }: { type: NavItem["icon"] }) {
         <svg {...common}>
           <path d="M4 8h16l-1.2 10.2A2 2 0 0 1 16.8 20H7.2a2 2 0 0 1-2-1.8L4 8Z" />
           <path d="M9 8V6a3 3 0 1 1 6 0v2" />
+        </svg>
+      );
+    case "coin":
+      return (
+        <svg {...common}>
+          <circle cx="12" cy="12" r="8" />
+          <path d="M14.5 9.5c-.6-.7-1.4-1-2.5-1-1.4 0-2.4.7-2.4 1.8 0 2.8 5.1 1.1 5.1 3.8 0 1.2-1.1 2-2.7 2-1.1 0-2.1-.4-2.8-1.2" />
+          <path d="M12 6.5v11" />
         </svg>
       );
     case "pages":
@@ -173,6 +187,33 @@ export function AppShell({
   subtitle?: string;
   children: ReactNode;
 }) {
+  const router = useRouter();
+  const [displayName, setDisplayName] = useState("Ituku member");
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [walletBalance, setWalletBalance] = useState<number | null>(null);
+
+  useEffect(() => {
+    const session = getSession();
+    if (session?.user) {
+      setDisplayName(session.user.fullName || session.user.username || "Ituku member");
+      const balance = Number(session.user.walletBalance);
+      if (Number.isFinite(balance)) setWalletBalance(balance);
+    }
+    if (session?.token) {
+      fetchNotifications()
+        .then((response) => setUnreadCount(response.data.filter((notification) => !notification.read).length))
+        .catch(() => setUnreadCount(0));
+      fetchWalletBalance()
+        .then(({ balance }) => setWalletBalance(balance))
+        .catch(() => undefined);
+    }
+  }, []);
+
+  function logOut() {
+    clearSession();
+    router.push("/auth/login");
+  }
+
   return (
     <div className="app-shell">
       <header className="topbar">
@@ -184,10 +225,10 @@ export function AppShell({
             </span>
           </Link>
 
-          <button type="button" className="header-search" aria-label="Search">
+          <Link href="/friends" className="header-search" aria-label="Search people and communities">
             <span aria-hidden="true">⌕</span>
             <span>Search</span>
-          </button>
+          </Link>
         </div>
 
         <nav className="topnav" aria-label="Quick navigation">
@@ -200,14 +241,20 @@ export function AppShell({
         </nav>
 
         <div className="topbar-actions">
-          <button type="button" className="icon-pill" aria-label="Search">
+          <Link href="/feed" className="icon-pill" aria-label="Open feed" title="Open feed">
             <AppIcon type="dashboard" />
-          </button>
-          <button type="button" className="icon-pill" aria-label="Notifications">
+          </Link>
+          <Link href="/notifications" className="icon-pill notification-button" aria-label="Open notifications" title="Notifications">
             <AppIcon type="invite" />
-          </button>
-          <button type="button" className="icon-pill" aria-label="Open account menu">
+            {unreadCount > 0 ? <span className="notification-count">{unreadCount > 9 ? "9+" : unreadCount}</span> : null}
+          </Link>
+          <Link href="/wallet" className="wallet-chip" aria-label="Open wallet"><ItukuCoinIcon size="xs" /> {walletBalance === null ? "Wallet" : walletBalance.toLocaleString()}</Link>
+          <Link href="/profile" className="account-chip" title="Open profile">
             <AppIcon type="user" />
+            <span>{displayName}</span>
+          </Link>
+          <button type="button" className="icon-pill" aria-label="Log out" title="Log out" onClick={logOut}>
+            <AppIcon type="logout" />
           </button>
         </div>
       </header>
@@ -248,6 +295,19 @@ export function AppShell({
           </Link>
         ))}
       </nav>
+
+      <footer className="app-footer">
+        <div className="app-footer-brand">
+          <strong>Ituku<span>App</span></strong>
+        </div>
+        <div className="app-footer-links">
+          <Link href="/about">About</Link>
+          <Link href="/communities">Communities</Link>
+          <Link href="/settings">Settings</Link>
+          <Link href="/notifications">Help & updates</Link>
+        </div>
+        <small>One Community. Nine Villages. One Voice.</small>
+      </footer>
     </div>
   );
 }

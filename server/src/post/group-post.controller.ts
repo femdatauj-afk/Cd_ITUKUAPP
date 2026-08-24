@@ -12,11 +12,12 @@ import {
 } from '@nestjs/common';
 import { GroupPostService } from './group-post.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { CommentService } from './comment.service';
 
 @Controller('groups/:groupId/posts')
 @UseGuards(JwtAuthGuard)
 export class GroupPostController {
-  constructor(private readonly groupPostService: GroupPostService) {}
+  constructor(private readonly groupPostService: GroupPostService, private readonly commentService: CommentService) {}
 
   /**
    * Create a new post in a group
@@ -48,7 +49,11 @@ export class GroupPostController {
   ) {
     const parsedLimit = limit ? parseInt(limit, 10) : 50;
     const parsedOffset = offset ? parseInt(offset, 10) : 0;
-    return this.groupPostService.getGroupPosts(groupId, parsedLimit, parsedOffset);
+    return this.groupPostService.getGroupPosts(
+      groupId,
+      parsedLimit,
+      parsedOffset,
+    );
   }
 
   /**
@@ -74,7 +79,12 @@ export class GroupPostController {
     @Body() body: { content?: string; photo?: string },
     @Request() req: any,
   ) {
-    return this.groupPostService.updatePost(postId, req.user.id, body.content, body.photo);
+    return this.groupPostService.updatePost(
+      postId,
+      req.user.id,
+      body.content,
+      body.photo,
+    );
   }
 
   /**
@@ -114,6 +124,31 @@ export class GroupPostController {
     @Request() req: any,
   ) {
     return this.groupPostService.unlikePost(postId, req.user.id);
+  }
+
+  @Get(':postId/comments')
+  async getComments(@Param('postId') postId: string, @Query('limit') limit?: string, @Query('offset') offset?: string) {
+    return this.commentService.getPostComments(postId, Number(limit || 50), Number(offset || 0), 'group');
+  }
+
+  @Post(':postId/comments')
+  async createComment(@Param('postId') postId: string, @Body() body: { content: string; parentId?: string; mediaUrl?: string }, @Request() req: any) {
+    return this.commentService.createComment(postId, req.user.id, body.content, body.parentId, body.mediaUrl, 'group');
+  }
+
+  @Post(':postId/comments/:commentId/reaction')
+  async reactToComment(@Param('commentId') commentId: string, @Request() req: any) {
+    return this.commentService.toggleReaction(commentId, req.user.id);
+  }
+
+  @Put(':postId/comments/:commentId')
+  async editComment(@Param('commentId') commentId: string, @Body() body: { content: string }, @Request() req: any) {
+    return this.commentService.updateComment(commentId, req.user.id, body.content);
+  }
+
+  @Delete(':postId/comments/:commentId')
+  async removeComment(@Param('commentId') commentId: string, @Request() req: any) {
+    return this.commentService.deleteComment(commentId, req.user.id, req.user.role, 'group');
   }
 
   /**

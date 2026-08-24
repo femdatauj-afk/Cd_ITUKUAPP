@@ -1,7 +1,18 @@
-import { Controller, Get, Post, Param, Body, Req, UseGuards, Query } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Param,
+  Body,
+  Req,
+  UseGuards,
+  Query,
+} from '@nestjs/common';
 import { Request } from 'express';
 import { WalletService } from './wallet.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { Roles } from '../auth/roles.decorator';
+import { RolesGuard } from '../auth/roles.guard';
 
 @Controller('wallet')
 export class WalletController {
@@ -21,7 +32,11 @@ export class WalletController {
     @Req() req: Request & { user: { id: string } },
     @Body() body: { receiverId: string; amount: number },
   ) {
-    return this.walletService.sendCoins(req.user.id, body.receiverId, body.amount);
+    return this.walletService.sendCoins(
+      req.user.id,
+      body.receiverId,
+      body.amount,
+    );
   }
 
   // Request withdrawal
@@ -84,15 +99,31 @@ export class WalletController {
     );
   }
 
-  // Admin: approve withdrawal
   @UseGuards(JwtAuthGuard)
+  @Get('ledger')
+  async getWalletLedger(
+    @Req() req: any,
+    @Query('limit') limit?: string,
+    @Query('offset') offset?: string,
+  ) {
+    return this.walletService.getWalletLedger(
+      req.user.id,
+      Number(limit || 50),
+      Number(offset || 0),
+    );
+  }
+
+  // Admin: approve withdrawal
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin', 'developer')
   @Post('admin/withdrawals/:withdrawalId/approve')
   async approveWithdrawal(@Param('withdrawalId') withdrawalId: string) {
     return this.walletService.approveWithdrawal(withdrawalId);
   }
 
   // Admin: reject withdrawal
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin', 'developer')
   @Post('admin/withdrawals/:withdrawalId/reject')
   async rejectWithdrawal(
     @Param('withdrawalId') withdrawalId: string,
@@ -102,17 +133,22 @@ export class WalletController {
   }
 
   // Admin: get pending withdrawals
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin', 'developer', 'moderator')
   @Get('admin/withdrawals/pending')
   async getPendingWithdrawals(
     @Query('limit') limit?: string,
     @Query('offset') offset?: string,
   ) {
-    return this.walletService.getPendingWithdrawals(Number(limit || 50), Number(offset || 0));
+    return this.walletService.getPendingWithdrawals(
+      Number(limit || 50),
+      Number(offset || 0),
+    );
   }
 
   // Admin: add coins to user
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin', 'developer')
   @Post('admin/add-coins/:userId')
   async addCoins(
     @Param('userId') userId: string,
@@ -121,7 +157,8 @@ export class WalletController {
     return this.walletService.addCoins(userId, body.amount);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin', 'developer', 'moderator')
   @Post('admin/moderate')
   async applyModerationAction(
     @Req() req: Request & { user: { id: string } },
@@ -136,7 +173,11 @@ export class WalletController {
       reason: string;
     },
   ) {
-    return this.walletService.applyModerationAction(req.user.id, body.targetUserId, body);
+    return this.walletService.applyModerationAction(
+      req.user.id,
+      body.targetUserId,
+      body,
+    );
   }
 
   @UseGuards(JwtAuthGuard)
@@ -149,12 +190,16 @@ export class WalletController {
   }
 
   // Admin: get all transactions
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin', 'developer')
   @Get('admin/transactions')
   async getAllTransactions(
     @Query('limit') limit?: string,
     @Query('offset') offset?: string,
   ) {
-    return this.walletService.getAllTransactions(Number(limit || 100), Number(offset || 0));
+    return this.walletService.getAllTransactions(
+      Number(limit || 100),
+      Number(offset || 0),
+    );
   }
 }

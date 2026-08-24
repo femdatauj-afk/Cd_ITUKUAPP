@@ -19,15 +19,17 @@ interface AuthenticatedSocket extends Socket {
   username?: string;
 }
 
-@WebSocketGateway(4001, {
+@WebSocketGateway({
   cors: {
-    origin: ['http://localhost:3002', 'http://localhost:3000'],
+    origin: ['http://localhost:3002'],
     methods: ['GET', 'POST'],
     credentials: true,
   },
   transports: ['websocket', 'polling'],
 })
-export class ChatGateway implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect {
+export class ChatGateway
+  implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect
+{
   @WebSocketServer() server: Server;
   private readonly logger = new Logger(ChatGateway.name);
   private userSockets: Map<string, Set<string>> = new Map(); // userId -> Set of socket IDs
@@ -39,7 +41,7 @@ export class ChatGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
   ) {}
 
   afterInit(server: Server) {
-    this.logger.log('Socket.IO server initialized on port 4001');
+    this.logger.log('Socket.IO server initialized on the API port');
   }
 
   async handleConnection(socket: AuthenticatedSocket) {
@@ -62,7 +64,9 @@ export class ChatGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
       });
 
       if (!user) {
-        this.logger.warn(`Connection attempt with invalid user: ${payload.sub}`);
+        this.logger.warn(
+          `Connection attempt with invalid user: ${payload.sub}`,
+        );
         socket.disconnect();
         return;
       }
@@ -115,19 +119,26 @@ export class ChatGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
         }
       }
 
-      this.logger.log(`User ${socket.username} (${socket.userId}) disconnected`);
+      this.logger.log(
+        `User ${socket.username} (${socket.userId}) disconnected`,
+      );
     } catch (error) {
       this.logger.error('Error during disconnection:', error);
     }
   }
 
   @SubscribeMessage('conversation:join')
-  async join(@ConnectedSocket() socket: AuthenticatedSocket, @MessageBody() body: { conversationId: string }) {
+  async join(
+    @ConnectedSocket() socket: AuthenticatedSocket,
+    @MessageBody() body: { conversationId: string },
+  ) {
     try {
       if (!socket.userId) throw new Error('Unauthorized');
       await this.chat.assertMember(body.conversationId, socket.userId);
       socket.join(`conversation:${body.conversationId}`);
-      this.logger.log(`${socket.username} joined conversation ${body.conversationId}`);
+      this.logger.log(
+        `${socket.username} joined conversation ${body.conversationId}`,
+      );
     } catch (error) {
       this.logger.error('Error joining conversation:', error);
       socket.emit('conversation:error', { error: error.message });
@@ -135,10 +146,15 @@ export class ChatGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
   }
 
   @SubscribeMessage('conversation:leave')
-  async leave(@ConnectedSocket() socket: AuthenticatedSocket, @MessageBody() body: { conversationId: string }) {
+  async leave(
+    @ConnectedSocket() socket: AuthenticatedSocket,
+    @MessageBody() body: { conversationId: string },
+  ) {
     try {
       socket.leave(`conversation:${body.conversationId}`);
-      this.logger.log(`${socket.username} left conversation ${body.conversationId}`);
+      this.logger.log(
+        `${socket.username} left conversation ${body.conversationId}`,
+      );
     } catch (error) {
       this.logger.error('Error leaving conversation:', error);
       socket.emit('conversation:error', { error: error.message });
@@ -153,7 +169,9 @@ export class ChatGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
     try {
       if (!socket.userId) throw new Error('Unauthorized');
       const message = await this.chat.send(socket.userId, body);
-      this.server.to(`conversation:${message.conversationId}`).emit('message:new', message);
+      this.server
+        .to(`conversation:${message.conversationId}`)
+        .emit('message:new', message);
       this.server.to(`user:${message.receiverId}`).emit('message:new', message);
       return message;
     } catch (error) {
@@ -201,11 +219,13 @@ export class ChatGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
         },
       });
 
-      this.server.to(`conversation:${body.conversationId}`).emit('message:read', {
-        userId: socket.userId,
-        messageIds: body.messageIds,
-        readAt: new Date(),
-      });
+      this.server
+        .to(`conversation:${body.conversationId}`)
+        .emit('message:read', {
+          userId: socket.userId,
+          messageIds: body.messageIds,
+          readAt: new Date(),
+        });
     } catch (error) {
       this.logger.error('Error processing read receipt:', error);
     }
@@ -214,7 +234,13 @@ export class ChatGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
   @SubscribeMessage('webrtc:signal')
   async signal(
     @ConnectedSocket() socket: AuthenticatedSocket,
-    @MessageBody() body: { callId: string; targetUserId: string; type: string; payload?: unknown },
+    @MessageBody()
+    body: {
+      callId: string;
+      targetUserId: string;
+      type: string;
+      payload?: unknown;
+    },
   ) {
     this.server.to(`user:${body.targetUserId}`).emit('webrtc:signal', {
       callId: body.callId,
@@ -227,9 +253,11 @@ export class ChatGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
   @SubscribeMessage('call:notify')
   notify(
     @ConnectedSocket() socket: AuthenticatedSocket,
-    @MessageBody() body: { targetUserId: string; callType?: string; conversationId?: string },
+    @MessageBody()
+    body: { targetUserId: string; callId?: string; callType?: string; conversationId?: string },
   ) {
     this.server.to(`user:${body.targetUserId}`).emit('call:incoming', {
+      callId: body.callId,
       fromUserId: socket.userId,
       fromUsername: socket.username,
       callType: body.callType,

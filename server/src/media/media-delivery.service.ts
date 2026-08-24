@@ -54,7 +54,9 @@ export class MediaDeliveryService {
     this.logger.log('Media Delivery Configuration:');
     this.logger.log(`  CDN Enabled: ${this.config.cdnEnabled}`);
     this.logger.log(`  Cache TTL: ${this.config.cacheTtl}s`);
-    this.logger.log(`  Max File Size: ${(this.config.maxFileSize / 1024 / 1024).toFixed(2)}MB`);
+    this.logger.log(
+      `  Max File Size: ${(this.config.maxFileSize / 1024 / 1024).toFixed(2)}MB`,
+    );
     this.logger.log(`  Compression: ${this.config.compressionEnabled}`);
     this.logger.log(`  Image Optimization: ${this.config.optimizeImages}`);
   }
@@ -62,7 +64,10 @@ export class MediaDeliveryService {
   /**
    * Generate CDN URL for media
    */
-  generateCdnUrl(objectKey: string, options?: { width?: number; height?: number; quality?: number }): string {
+  generateCdnUrl(
+    objectKey: string,
+    options?: { width?: number; height?: number; quality?: number },
+  ): string {
     if (!this.config.cdnEnabled || !this.config.cdnUrl) {
       return objectKey;
     }
@@ -92,8 +97,8 @@ export class MediaDeliveryService {
 
     return {
       'Cache-Control': `public, max-age=${ttl}`,
-      'Expires': new Date(Date.now() + ttl * 1000).toUTCString(),
-      'ETag': this.generateETag(),
+      Expires: new Date(Date.now() + ttl * 1000).toUTCString(),
+      ETag: this.generateETag(),
       'Last-Modified': new Date().toUTCString(),
     };
   }
@@ -110,7 +115,8 @@ export class MediaDeliveryService {
    */
   getSecurityHeaders(): Record<string, string> {
     return {
-      'Content-Security-Policy': "default-src 'self'; img-src 'self' data: https:; media-src 'self'",
+      'Content-Security-Policy':
+        "default-src 'self'; img-src 'self' data: https:; media-src 'self'",
       'X-Content-Type-Options': 'nosniff',
       'X-Frame-Options': 'DENY',
       'X-XSS-Protection': '1; mode=block',
@@ -120,7 +126,10 @@ export class MediaDeliveryService {
   /**
    * Validate file before upload
    */
-  validateFile(mimeType: string, fileSize: number): { valid: boolean; error?: string } {
+  validateFile(
+    mimeType: string,
+    fileSize: number,
+  ): { valid: boolean; error?: string } {
     if (!this.config.allowedMimeTypes.includes(mimeType)) {
       return {
         valid: false,
@@ -205,17 +214,25 @@ export class MediaDeliveryService {
     return [
       {
         variant: 'thumbnail',
-        url: this.generateCdnUrl(objectKey, { width: 200, quality: this.getRecommendedQuality('thumbnail') }),
+        url: this.generateCdnUrl(objectKey, {
+          width: 200,
+          quality: this.getRecommendedQuality('thumbnail'),
+        }),
         size: '200px',
       },
       {
         variant: 'preview',
-        url: this.generateCdnUrl(objectKey, { width: 600, quality: this.getRecommendedQuality('preview') }),
+        url: this.generateCdnUrl(objectKey, {
+          width: 600,
+          quality: this.getRecommendedQuality('preview'),
+        }),
         size: '600px',
       },
       {
         variant: 'full',
-        url: this.generateCdnUrl(objectKey, { quality: this.getRecommendedQuality('full') }),
+        url: this.generateCdnUrl(objectKey, {
+          quality: this.getRecommendedQuality('full'),
+        }),
         size: 'full',
       },
     ];

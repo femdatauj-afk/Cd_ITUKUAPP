@@ -52,7 +52,12 @@ export class HealthService {
     ]);
 
     // Determine overall status
-    const allStatuses = [database.status, memory.status, uptime.status, workers.status];
+    const allStatuses = [
+      database.status,
+      memory.status,
+      uptime.status,
+      workers.status,
+    ];
     let overallStatus: 'healthy' | 'degraded' | 'unhealthy' = 'healthy';
 
     if (allStatuses.includes('error')) {
@@ -103,7 +108,8 @@ export class HealthService {
     const memUsage = process.memoryUsage();
     const heapUsedPercent = (memUsage.heapUsed / memUsage.heapTotal) * 100;
 
-    const status = heapUsedPercent > this.memoryThresholdPercent ? 'warning' : 'ok';
+    const status =
+      heapUsedPercent > this.memoryThresholdPercent ? 'warning' : 'ok';
 
     if (status === 'warning') {
       this.logger.warn(

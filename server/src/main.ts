@@ -1,4 +1,7 @@
+import * as path from 'node:path';
+import { config as loadEnv } from 'dotenv';
 import { NestFactory } from '@nestjs/core';
+import { NestExpressApplication } from '@nestjs/platform-express';
 import { Logger } from '@nestjs/common';
 import { AppModule } from './app.module';
 import { SecurityMiddleware } from './security/security.middleware';
@@ -6,8 +9,11 @@ import { EnvironmentService } from './security/environment.service';
 import { RateLimitService } from './security/rate-limit.service';
 import { SecurityHeadersService } from './security/security-headers.service';
 
+loadEnv({ path: path.resolve(__dirname, '../.env') });
+
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  app.useStaticAssets(path.resolve(__dirname, '../public'));
   const logger = new Logger('Bootstrap');
 
   // Get security services from app context
@@ -22,7 +28,11 @@ async function bootstrap() {
   // Enable CORS with environment-based configuration
   app.enableCors({
     origin: (origin, callback) => {
-      if (!origin || config.corsOrigins.includes(origin) || config.corsOrigins.includes('*')) {
+      if (
+        !origin ||
+        config.corsOrigins.includes(origin) ||
+        config.corsOrigins.includes('*')
+      ) {
         callback(null, true);
       } else {
         logger.warn(`CORS blocked origin: ${origin}`);
@@ -36,7 +46,19 @@ async function bootstrap() {
   });
 
   // Apply global middleware for security
-  app.use(new SecurityMiddleware(rateLimitService, securityHeadersService, environmentService).use.bind(new SecurityMiddleware(rateLimitService, securityHeadersService, environmentService)));
+  app.use(
+    new SecurityMiddleware(
+      rateLimitService,
+      securityHeadersService,
+      environmentService,
+    ).use.bind(
+      new SecurityMiddleware(
+        rateLimitService,
+        securityHeadersService,
+        environmentService,
+      ),
+    ),
+  );
 
   // Set API prefix
   app.setGlobalPrefix('api');
@@ -45,7 +67,9 @@ async function bootstrap() {
   logger.log(`Starting ITUKUAPP server in ${config.nodeEnv} mode`);
   logger.log(`Port: ${config.port}`);
   logger.log(`CORS Origins: ${config.corsOrigins.join(', ')}`);
-  logger.log(`Rate Limit: ${config.rateLimitMaxRequests} requests per ${config.rateLimitWindowMs}ms`);
+  logger.log(
+    `Rate Limit: ${config.rateLimitMaxRequests} requests per ${config.rateLimitWindowMs}ms`,
+  );
 
   // Start server
   await app.listen(config.port);
@@ -56,4 +80,3 @@ bootstrap().catch((error) => {
   console.error('Failed to start server:', error);
   process.exit(1);
 });
-

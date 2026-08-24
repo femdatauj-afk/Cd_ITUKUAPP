@@ -21,7 +21,9 @@ export class S3StorageProvider implements IStorageProvider {
       const region = process.env.AWS_REGION || 'us-east-1';
 
       if (!accessKeyId || !secretAccessKey) {
-        this.logger.warn('AWS credentials not configured. S3StorageProvider will not work.');
+        this.logger.warn(
+          'AWS credentials not configured. S3StorageProvider will not work.',
+        );
         return;
       }
 
@@ -35,14 +37,19 @@ export class S3StorageProvider implements IStorageProvider {
         });
         this.logger.log('S3StorageProvider initialized successfully');
       } catch (error) {
-        this.logger.error('aws-sdk not installed. Install with: npm install aws-sdk');
+        this.logger.error(
+          'aws-sdk not installed. Install with: npm install aws-sdk',
+        );
       }
     } catch (error) {
       this.logger.error(`Failed to initialize S3: ${error.message}`);
     }
   }
 
-  async upload(file: Express.Multer.File, filePath: string): Promise<{ url: string; key: string }> {
+  async upload(
+    file: Express.Multer.File,
+    filePath: string,
+  ): Promise<{ url: string; key: string }> {
     if (!this.s3Client) {
       throw new Error('S3 client not initialized. Configure AWS credentials.');
     }
@@ -127,7 +134,9 @@ export class S3StorageProvider implements IStorageProvider {
       if (error.code === 'NotFound') {
         return false;
       }
-      this.logger.error(`Failed to check S3 object existence: ${error.message}`);
+      this.logger.error(
+        `Failed to check S3 object existence: ${error.message}`,
+      );
       return false;
     }
   }

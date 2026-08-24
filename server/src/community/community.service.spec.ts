@@ -3,6 +3,11 @@ import { CommunityService } from './community.service';
 import { PrismaService } from '../prisma/prisma.service';
 
 describe('CommunityService', () => {
+  const moderationService = {
+    checkUserModeration: jest.fn().mockResolvedValue(false),
+    getModerationStatus: jest.fn(),
+  };
+
   it('throws error when user wallet has insufficient funds for group creation', async () => {
     const prisma = {
       wallet: {
@@ -10,7 +15,7 @@ describe('CommunityService', () => {
       },
     } as unknown as PrismaService;
 
-    const service = new CommunityService(prisma);
+    const service = new CommunityService(prisma, moderationService);
 
     await expect(service.createGroup('user-1', 'Youth Forum')).rejects.toThrow(
       BadRequestException,
@@ -24,7 +29,7 @@ describe('CommunityService', () => {
       },
     } as unknown as PrismaService;
 
-    const service = new CommunityService(prisma);
+    const service = new CommunityService(prisma, moderationService);
 
     await expect(service.createPage('user-1', 'Business Page', 'Business')).rejects.toThrow(
       BadRequestException,
@@ -33,12 +38,18 @@ describe('CommunityService', () => {
 
   it('throws error when user wallet has insufficient funds for marketplace listing creation', async () => {
     const prisma = {
+      user: {
+        findUnique: jest.fn().mockResolvedValue({
+          isVerified: true,
+          verificationStatus: 'approved',
+        }),
+      },
       wallet: {
         findUnique: jest.fn().mockResolvedValue({ balance: 15 }),
       },
     } as unknown as PrismaService;
 
-    const service = new CommunityService(prisma);
+    const service = new CommunityService(prisma, moderationService);
 
     await expect(
       service.createMarketplaceListing('user-1', {

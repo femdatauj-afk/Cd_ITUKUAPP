@@ -1,4 +1,14 @@
-import { Controller, Get, Post, Delete, Param, Body, Req, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Delete,
+  Param,
+  Body,
+  Query,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 import { PostService } from './post.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 
@@ -9,8 +19,17 @@ export class PostController {
   // Create post
   @UseGuards(JwtAuthGuard)
   @Post()
-  async createPost(@Req() req: any, @Body() body: { content: string; photo?: string }) {
+  async createPost(
+    @Req() req: any,
+    @Body() body: { content: string; photo?: string },
+  ) {
     return this.postService.createPost(req.user.id, body.content, body.photo);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('saved')
+  async getSavedPosts(@Req() req: any) {
+    return this.postService.getSavedPosts(req.user.id);
   }
 
   // Get single post
@@ -24,9 +43,14 @@ export class PostController {
   @Get()
   async getFeed(
     @Req() req: any,
-    @Body() body: { limit?: number; offset?: number },
+    @Query('limit') limit?: string,
+    @Query('offset') offset?: string,
   ) {
-    return this.postService.getFeed(req.user.id, body.limit || 20, body.offset || 0);
+    return this.postService.getFeed(
+      req.user.id,
+      Number(limit) || 20,
+      Number(offset) || 0,
+    );
   }
 
   // Delete post
@@ -92,5 +116,17 @@ export class PostController {
   @Delete(':postId/share')
   async unsharePost(@Param('postId') postId: string, @Req() req: any) {
     return this.postService.unsharePost(postId, req.user.id);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post(':postId/save')
+  async savePost(@Param('postId') postId: string, @Req() req: any) {
+    return this.postService.savePost(postId, req.user.id);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Delete(':postId/save')
+  async unsavePost(@Param('postId') postId: string, @Req() req: any) {
+    return this.postService.unsavePost(postId, req.user.id);
   }
 }

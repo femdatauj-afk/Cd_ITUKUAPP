@@ -21,11 +21,12 @@ ItukuApp is a community-first social platform for the nine villages of Ituku Com
 3. Install dependencies:
    - root app: `npm install`
    - server app: `cd server && npm install`
-4. Start the backend:
-   - `cd server && npm run start:dev`
-5. Start the frontend:
-   - `npm run dev -- --port 3002`
-6. Open `http://localhost:3002`
+4. Start both services from the repository root:
+   - `npm run dev:all`
+5. Open the frontend at `http://localhost:3002`.
+6. The backend API is available at `http://localhost:4000/api`.
+
+For separate terminals, use `npm run dev` for the frontend and `npm run dev:backend` for the backend.
 
 ## Production-oriented extension plan
 

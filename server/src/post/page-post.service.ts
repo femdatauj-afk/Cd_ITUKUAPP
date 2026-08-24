@@ -1,4 +1,10 @@
-import { Injectable, NotFoundException, ForbiddenException, BadRequestException, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ForbiddenException,
+  BadRequestException,
+  Logger,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
@@ -6,6 +12,12 @@ export class PagePostService {
   private readonly logger = new Logger(PagePostService.name);
 
   constructor(private prisma: PrismaService) {}
+
+  private findPage(identifier: string) {
+    return this.prisma.page.findFirst({
+      where: { OR: [{ id: identifier }, { slug: identifier }] },
+    });
+  }
 
   /**
    * Create a new post on a page
@@ -19,9 +31,7 @@ export class PagePostService {
     this.logger.log(`Creating post on page ${pageId} by user ${authorId}`);
 
     // Verify page exists and user has permission
-    const page = await this.prisma.page.findUnique({
-      where: { id: pageId },
-    });
+    const page = await this.findPage(pageId);
 
     if (!page) {
       throw new NotFoundException('Page not found');
@@ -33,7 +43,9 @@ export class PagePostService {
         where: { id: authorId },
       });
       if (user?.role !== 'admin' && user?.role !== 'moderator') {
-        throw new ForbiddenException('You do not have permission to post on this page');
+        throw new ForbiddenException(
+          'You do not have permission to post on this page',
+        );
       }
     }
 
@@ -43,7 +55,7 @@ export class PagePostService {
 
     const post = await this.prisma.pagePost.create({
       data: {
-        pageId,
+        pageId: page.id,
         authorId,
         content,
         photo: photo || null,
@@ -76,9 +88,7 @@ export class PagePostService {
     this.logger.log(`Fetching posts for page ${pageId}`);
 
     // Verify page exists
-    const page = await this.prisma.page.findUnique({
-      where: { id: pageId },
-    });
+    const page = await this.findPage(pageId);
 
     if (!page) {
       throw new NotFoundException('Page not found');
@@ -86,7 +96,7 @@ export class PagePostService {
 
     const [posts, total] = await Promise.all([
       this.prisma.pagePost.findMany({
-        where: { pageId },
+        where: { pageId: page.id },
         include: {
           author: {
             select: {
@@ -101,7 +111,7 @@ export class PagePostService {
         take: limit,
         skip: offset,
       }),
-      this.prisma.pagePost.count({ where: { pageId } }),
+      this.prisma.pagePost.count({ where: { pageId: page.id } }),
     ]);
 
     return {
@@ -155,7 +165,12 @@ export class PagePostService {
   /**
    * Update a post
    */
-  async updatePost(postId: string, userId: string, content?: string, photo?: string) {
+  async updatePost(
+    postId: string,
+    userId: string,
+    content?: string,
+    photo?: string,
+  ) {
     this.logger.log(`Updating post ${postId} by user ${userId}`);
 
     const post = await this.prisma.pagePost.findUnique({

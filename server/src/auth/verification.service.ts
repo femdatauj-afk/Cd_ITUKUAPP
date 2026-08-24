@@ -1,4 +1,10 @@
-import { Injectable, BadRequestException, NotFoundException, ForbiddenException, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  BadRequestException,
+  NotFoundException,
+  ForbiddenException,
+  Logger,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
@@ -11,7 +17,9 @@ export class VerificationService {
    * Submit a verification request for a user
    */
   async submitVerificationRequest(userId: string, verificationMethod: string) {
-    this.logger.log(`Verification request submitted by user ${userId} using method: ${verificationMethod}`);
+    this.logger.log(
+      `Verification request submitted by user ${userId} using method: ${verificationMethod}`,
+    );
 
     // Check if user exists
     const user = await this.prisma.user.findUnique({
@@ -31,7 +39,9 @@ export class VerificationService {
     });
 
     if (existingPending) {
-      throw new BadRequestException('You already have a pending verification request');
+      throw new BadRequestException(
+        'You already have a pending verification request',
+      );
     }
 
     // Create verification audit record
@@ -58,8 +68,14 @@ export class VerificationService {
   /**
    * Admin approve a verification request
    */
-  async approveVerification(verificationId: string, adminId: string, reason?: string) {
-    this.logger.log(`Verification ${verificationId} approved by admin ${adminId}`);
+  async approveVerification(
+    verificationId: string,
+    adminId: string,
+    reason?: string,
+  ) {
+    this.logger.log(
+      `Verification ${verificationId} approved by admin ${adminId}`,
+    );
 
     // Check if admin exists and has admin role
     const admin = await this.prisma.user.findUnique({
@@ -80,11 +96,15 @@ export class VerificationService {
     }
 
     if (verificationAudit.verificationStatus === 'approved') {
-      throw new BadRequestException('This verification has already been approved');
+      throw new BadRequestException(
+        'This verification has already been approved',
+      );
     }
 
     if (verificationAudit.verificationStatus === 'rejected') {
-      throw new BadRequestException('This verification has already been rejected');
+      throw new BadRequestException(
+        'This verification has already been rejected',
+      );
     }
 
     // Update verification audit
@@ -124,8 +144,14 @@ export class VerificationService {
   /**
    * Admin reject a verification request
    */
-  async rejectVerification(verificationId: string, adminId: string, reason: string) {
-    this.logger.log(`Verification ${verificationId} rejected by admin ${adminId}`);
+  async rejectVerification(
+    verificationId: string,
+    adminId: string,
+    reason: string,
+  ) {
+    this.logger.log(
+      `Verification ${verificationId} rejected by admin ${adminId}`,
+    );
 
     if (!reason || reason.trim().length === 0) {
       throw new BadRequestException('Rejection reason is required');
@@ -150,11 +176,15 @@ export class VerificationService {
     }
 
     if (verificationAudit.verificationStatus === 'approved') {
-      throw new BadRequestException('This verification has already been approved');
+      throw new BadRequestException(
+        'This verification has already been approved',
+      );
     }
 
     if (verificationAudit.verificationStatus === 'rejected') {
-      throw new BadRequestException('This verification has already been rejected');
+      throw new BadRequestException(
+        'This verification has already been rejected',
+      );
     }
 
     // Update verification audit
@@ -202,7 +232,7 @@ export class VerificationService {
 
     return {
       success: true,
-      data: audits.map(audit => ({
+      data: audits.map((audit) => ({
         id: audit.id,
         status: audit.verificationStatus,
         method: audit.verificationMethod,
@@ -250,11 +280,13 @@ export class VerificationService {
         status: user.verificationStatus,
         badge: user.verifiedBadge,
         lastVerificationAt: user.lastVerificationAt,
-        latestRequest: latestAudit ? {
-          id: latestAudit.id,
-          status: latestAudit.verificationStatus,
-          submittedAt: latestAudit.createdAt,
-        } : null,
+        latestRequest: latestAudit
+          ? {
+              id: latestAudit.id,
+              status: latestAudit.verificationStatus,
+              submittedAt: latestAudit.createdAt,
+            }
+          : null,
       },
     };
   }
@@ -263,7 +295,9 @@ export class VerificationService {
    * Get all pending verification requests (admin endpoint)
    */
   async getPendingVerifications(limit: number = 50, offset: number = 0) {
-    this.logger.log(`Fetching pending verifications (limit: ${limit}, offset: ${offset})`);
+    this.logger.log(
+      `Fetching pending verifications (limit: ${limit}, offset: ${offset})`,
+    );
 
     const [verifications, total] = await Promise.all([
       this.prisma.verificationAudit.findMany({
@@ -291,7 +325,7 @@ export class VerificationService {
 
     return {
       success: true,
-      data: verifications.map(v => ({
+      data: verifications.map((v) => ({
         id: v.id,
         user: v.user,
         method: v.verificationMethod,
@@ -309,8 +343,14 @@ export class VerificationService {
   /**
    * Bulk reject verification requests (admin endpoint)
    */
-  async bulkRejectVerifications(verificationIds: string[], adminId: string, reason: string) {
-    this.logger.log(`Bulk rejecting ${verificationIds.length} verifications by admin ${adminId}`);
+  async bulkRejectVerifications(
+    verificationIds: string[],
+    adminId: string,
+    reason: string,
+  ) {
+    this.logger.log(
+      `Bulk rejecting ${verificationIds.length} verifications by admin ${adminId}`,
+    );
 
     // Check if admin exists
     const admin = await this.prisma.user.findUnique({

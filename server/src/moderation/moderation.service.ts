@@ -18,10 +18,7 @@ export class ModerationService {
       where: {
         userId,
         isActive: true,
-        OR: [
-          { expiresAt: null },
-          { expiresAt: { gt: new Date() } },
-        ],
+        OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
       },
       orderBy: { createdAt: 'desc' },
       take: 1,
@@ -33,7 +30,9 @@ export class ModerationService {
 
     const moderation = activeModerations[0];
     const daysRemaining = moderation.expiresAt
-      ? Math.ceil((moderation.expiresAt.getTime() - Date.now()) / (1000 * 60 * 60 * 24))
+      ? Math.ceil(
+          (moderation.expiresAt.getTime() - Date.now()) / (1000 * 60 * 60 * 24),
+        )
       : null;
 
     return {
@@ -96,7 +95,11 @@ export class ModerationService {
     return moderation;
   }
 
-  async listModerationActions(filter?: { userId?: string; action?: string; isActive?: boolean }) {
+  async listModerationActions(filter?: {
+    userId?: string;
+    action?: string;
+    isActive?: boolean;
+  }) {
     return this.prisma.moderationAction.findMany({
       where: {
         ...(filter?.userId && { userId: filter.userId }),

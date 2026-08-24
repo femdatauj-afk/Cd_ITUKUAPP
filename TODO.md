@@ -3,15 +3,31 @@
 **Target**: Build a professional Facebook-style social platform for ItukuApp following the 44-point specification.
 
 **Start Date**: 2026-08-17  
-**Status**: Phase 1 (Audit) in progress
+ **Status**: Recovery checkpoint recorded; wallet and profile slices validated; broader worktree remains uncommitted
 
 ---
 
 ## QUICK STATUS
 
 - ✅ Phase 0 Complete: Foundation (auth, seeding, basic API)
-- 🔄 Phase 1 Active: Audit & Documentation  
-- ⏳ Phase 2-14: Scheduled (see sections below)
+- ✅ Phase 1 Complete: Audit & Documentation
+- 🔄 Phase 2-14: Continue one scoped slice at a time (see sections below)
+
+## RECOVERY CHECKPOINT - 2026-08-22
+
+- Frontend build passes: 29 routes, including `/wallet`.
+- Backend build passes from the `server` directory.
+- Wallet history now uses the ledger as its single source and calculates historical balances.
+- Backend withdrawals require whole positive coin amounts.
+- The worktree contains a broad preserved uncommitted upgrade batch; no reset or destructive cleanup has been performed.
+- Do not start another feature slice until the current slice is validated and checkpointed in Git.
+
+## DEVELOPMENT WORKFLOW CHECKPOINT - 2026-08-22
+
+- Root project is the only active frontend; the unused nested `itukuapp` starter app was removed.
+- Use `npm run dev:all` from the repository root for the stable local preview.
+- Frontend: `http://localhost:3002`; backend API: `http://localhost:4000/api`.
+- Frontend and backend builds pass after consolidating the development scripts.
 
 ---
 
@@ -47,36 +63,49 @@
 
 ## PHASE 2: CORE FIXES & ROUTING
 
-- [ ] Fix user profile links in chat
-- [ ] Create /profile/[username] route
-- [ ] Create /verification route
-- [ ] Create /wallet and /wallet/* routes
-- [ ] Create /groups/create and /groups/[slug]
-- [ ] Create /pages/create and /pages/[slug]
-- [ ] Create /marketplace/dashboard and /marketplace/[slug]
-- [ ] Create /chat/[conversationId]
-- [ ] Create admin/moderator dashboard routes
-- [ ] Dashboard header cleanup
-- [ ] Error boundary components
-- [ ] 404 page handling
-- [ ] Build verification (TypeScript)
+- [x] Fix user profile links in chat
+- [x] Create /profile/[username] route
+- [x] Create /verification route
+- [x] Create /wallet route
+- [x] Create /groups/[id] route
+- [x] Create /pages/[id] route
+- [x] Create /marketplace route
+- [x] Create /chat/[conversationId]
+- [x] Create admin/moderator dashboard routes
+- [x] Dashboard header cleanup
+- [x] Error boundary components
+- [x] 404 page handling
+- [x] Build verification (TypeScript)
 
 ---
 
 ## PHASE 3: WALLET SYSTEM & ITUKUAPP COIN
 
-- [ ] Database models (WalletTransaction, CoinTransaction)
-- [ ] Backend wallet service (debit, credit, history)
-- [ ] Backend wallet API routes
-- [ ] ItukuApp Coin SVG component (xs, sm, md, lg)
-- [ ] ItukuCoinIcon component
-- [ ] ItukuCoinAmount component
-- [ ] ItukuCoinBalance component
+- [x] Database models (WalletTransaction, CoinTransaction)
+- [x] Backend wallet service (debit, credit, history)
+- [x] Backend wallet API routes
+- [x] ItukuApp Coin SVG component (xs, sm, md, lg)
+- [x] ItukuCoinIcon component
+- [x] ItukuCoinAmount component
+- [x] ItukuCoinBalance component
 - [ ] Frontend wallet pages (/wallet/transactions, /wallet/coin)
-- [ ] Frontend wallet integration
-- [ ] Wallet balance in header/nav
-- [ ] Wallet balance in profile
+- [x] Frontend wallet integration
+- [x] Wallet balance in header/nav
+- [x] Wallet balance in profile
 - [ ] Tests (credit, debit, history, duplicates)
+- [x] Wallet build validation and duplicate-history correction
+- [x] Shared coin UI and live balance surfaces
+
+## COMMENTS AND MEDIA CHECKPOINT - 2026-08-22
+
+- [x] Generic post comments support replies, reactions, edit, and delete.
+- [x] Generic post comments support image and video attachments.
+- [x] Feed composer uploads images and MP4/WebM videos to local storage.
+- [x] Local database schema updated with threaded comments and comment reactions.
+- [x] Shared feed comment component compiled and integrated.
+- [x] Group and page posts use persistent threaded comment/reaction routes and shared UI.
+- [ ] Community posts still need a persistent post model and the same comment/reaction wiring.
+- [x] Preview/API recovery checkpoint: frontend `127.0.0.1:3003`, backend `127.0.0.1:4000`.
 
 ---
 

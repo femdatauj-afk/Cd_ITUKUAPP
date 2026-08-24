@@ -3,7 +3,7 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "sqlite"
 }
 
 model User {
@@ -55,6 +55,7 @@ model User {
   sentTransactions      CoinTransaction[] @relation("SenderTransaction")
   receivedTransactions  CoinTransaction[] @relation("ReceiverTransaction")
   withdrawals           Withdrawal[]
+  payments              Payment[]
   marketplaceListings   MarketplaceListing[]
   moderationActions     ModerationAction[]
   verificationAudits    VerificationAudit[]
@@ -71,7 +72,8 @@ model Wallet {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  user User @relation(fields: [userId], references: [id])
+  user     User      @relation(fields: [userId], references: [id])
+  payments Payment[]
 }
 
 model Post {
@@ -553,4 +555,71 @@ model PagePost {
   @@index([pageId])
   @@index([authorId])
   @@index([createdAt])
+}
+
+// Payment initialization and tracking
+model Payment {
+  id               String   @id @default(cuid())
+  userId           String
+  walletId         String
+  reference        String   @unique // Paystack reference
+  amount           Int      // Amount in Naira (NGN) * 100 (kobo)
+  currency         String   @default("NGN")
+  status           String   @default("pending") // "pending", "completed", "failed", "abandoned", "refunded"
+  paymentMethod    String   @default("paystack")
+  coinsAmount      Int      // How many coins the user is buying
+  paymentUrl       String?  // Redirect URL to Paystack
+  metadata         String?  // Additional JSON metadata
+  failureReason    String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  completedAt      DateTime?
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  wallet    Wallet    @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  attempts  PaymentAttempt[]
+  verification PaymentVerification?
+
+  @@index([userId])
+  @@index([reference])
+  @@index([status])
+  @@index([createdAt])
+}
+
+// Payment attempt details (retries, errors)
+model PaymentAttempt {
+  id           String   @id @default(cuid())
+  paymentId    String
+  attemptNumber Int
+  authorizationUrl String?
+  responseCode String?
+  responseMessage String?
+  errorCode    String?
+  errorMessage String?
+  createdAt    DateTime @default(now())
+
+  payment Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+
+  @@index([paymentId])
+  @@index([attemptNumber])
+}
+
+// Payment verification webhook data
+model PaymentVerification {
+  id               String   @id @default(cuid())
+  paymentId        String   @unique
+  webhookId        String?  // Paystack webhook event ID
+  verifiedAt       DateTime?
+  webhookSignature String?
+  verificationStatus String @default("pending") // "pending", "verified", "failed"
+  webhookPayload   String?  // Raw webhook JSON payload for audit
+  idempotencyKey   String?  @unique // For preventing duplicate credits
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  payment Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+
+  @@index([paymentId])
+  @@index([webhookId])
+  @@index([idempotencyKey])
 }

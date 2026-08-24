@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
@@ -49,7 +53,12 @@ export class MessageService {
   }
 
   // Get conversation between two users
-  async getConversation(userId: string, otherUserId: string, limit: number = 50, offset: number = 0) {
+  async getConversation(
+    userId: string,
+    otherUserId: string,
+    limit: number = 50,
+    offset: number = 0,
+  ) {
     const messages = await this.prisma.message.findMany({
       where: {
         OR: [
@@ -84,7 +93,11 @@ export class MessageService {
   }
 
   // Get all conversations for a user
-  async getConversations(userId: string, limit: number = 20, offset: number = 0) {
+  async getConversations(
+    userId: string,
+    limit: number = 20,
+    offset: number = 0,
+  ) {
     // Get unique conversation partners
     const messages = await this.prisma.message.findMany({
       where: {
@@ -118,7 +131,10 @@ export class MessageService {
     }
 
     const conversations = Array.from(conversationPartners.values())
-      .sort((a, b) => b.lastMessage.createdAt.getTime() - a.lastMessage.createdAt.getTime())
+      .sort(
+        (a, b) =>
+          b.lastMessage.createdAt.getTime() - a.lastMessage.createdAt.getTime(),
+      )
       .slice(offset, offset + limit);
 
     return conversations;
@@ -135,7 +151,9 @@ export class MessageService {
     }
 
     if (message.receiverId !== userId) {
-      throw new BadRequestException('Cannot mark message as read if not the receiver.');
+      throw new BadRequestException(
+        'Cannot mark message as read if not the receiver.',
+      );
     }
 
     const updated = await this.prisma.message.update({

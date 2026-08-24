@@ -1,4 +1,10 @@
-import { ConflictException, Injectable, UnauthorizedException, BadRequestException, OnModuleInit } from '@nestjs/common';
+import {
+  ConflictException,
+  Injectable,
+  UnauthorizedException,
+  BadRequestException,
+  OnModuleInit,
+} from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { v4 as uuidv4 } from 'uuid';
@@ -26,7 +32,10 @@ export class AuthService implements OnModuleInit {
     try {
       await this.runAutoVerificationSweep();
     } catch (error) {
-      console.warn('Auto verification sweep failed (database may not be initialized yet):', error.message);
+      console.warn(
+        'Auto verification sweep failed (database may not be initialized yet):',
+        error.message,
+      );
     }
   }
 
@@ -47,7 +56,9 @@ export class AuthService implements OnModuleInit {
       },
     });
     if (existing) {
-      throw new ConflictException('A user with that email or username already exists.');
+      throw new ConflictException(
+        'A user with that email or username already exists.',
+      );
     }
 
     const passwordHash = await bcrypt.hash(input.password, 10);
@@ -65,7 +76,8 @@ export class AuthService implements OnModuleInit {
         emailVerified: false,
         phoneVerified: false,
         isVerified: false,
-        verificationMethod: input.verificationMethod || (input.phone ? 'phone' : 'email'),
+        verificationMethod:
+          input.verificationMethod || (input.phone ? 'phone' : 'email'),
         verifiedBadge: 'Pending Verification',
         usernameUpdatedAt: new Date(),
         accountExpiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
@@ -126,9 +138,10 @@ export class AuthService implements OnModuleInit {
   }
 
   async login(input: { identifier: string; password: string }) {
+    const identifier = input.identifier.trim();
     const user = await this.prisma.user.findFirst({
       where: {
-        OR: [{ email: input.identifier }, { username: input.identifier }],
+        OR: [{ email: identifier.toLowerCase() }, { username: identifier }],
       },
     });
     if (!user) {
@@ -141,7 +154,9 @@ export class AuthService implements OnModuleInit {
     }
 
     if (!user.isActive && user.verificationStatus !== 'active') {
-      throw new UnauthorizedException('Your account is pending verification. Admin approval is required before login.');
+      throw new UnauthorizedException(
+        'Your account is pending verification. Admin approval is required before login.',
+      );
     }
 
     const token = this.jwtService.sign(this.buildJwtPayload(user));
@@ -157,7 +172,17 @@ export class AuthService implements OnModuleInit {
     return this.sanitizeUser(user);
   }
 
-  async updateProfile(userId: string, data: { fullName?: string; username?: string; email?: string; village?: string; bio?: string; phone?: string }) {
+  async updateProfile(
+    userId: string,
+    data: {
+      fullName?: string;
+      username?: string;
+      email?: string;
+      village?: string;
+      bio?: string;
+      phone?: string;
+    },
+  ) {
     if (data.email) {
       const emailOwner = await this.prisma.user.findFirst({
         where: {
@@ -170,7 +195,9 @@ export class AuthService implements OnModuleInit {
       }
     }
 
-    const currentUser = await this.prisma.user.findUnique({ where: { id: userId } });
+    const currentUser = await this.prisma.user.findUnique({
+      where: { id: userId },
+    });
     if (!currentUser) {
       throw new UnauthorizedException('User not found.');
     }
@@ -184,16 +211,27 @@ export class AuthService implements OnModuleInit {
         },
       });
       if (usernameOwner) {
-        throw new ConflictException('A user with that username already exists.');
+        throw new ConflictException(
+          'A user with that username already exists.',
+        );
       }
 
-      const lastChange = currentUser.usernameUpdatedAt ? new Date(currentUser.usernameUpdatedAt) : null;
-      if (lastChange && Date.now() - lastChange.getTime() < 30 * 24 * 60 * 60 * 1000) {
-        throw new BadRequestException('Username can only be changed once every 30 days.');
+      const lastChange = currentUser.usernameUpdatedAt
+        ? new Date(currentUser.usernameUpdatedAt)
+        : null;
+      if (
+        lastChange &&
+        Date.now() - lastChange.getTime() < 30 * 24 * 60 * 60 * 1000
+      ) {
+        throw new BadRequestException(
+          'Username can only be changed once every 30 days.',
+        );
       }
 
       data.username = parsedUsername;
-      data = { ...data, usernameUpdatedAt: new Date() } as typeof data & { usernameUpdatedAt?: Date };
+      data = { ...data, usernameUpdatedAt: new Date() } as typeof data & {
+        usernameUpdatedAt?: Date;
+      };
     }
 
     const user = await this.prisma.user.update({
@@ -271,7 +309,9 @@ export class AuthService implements OnModuleInit {
       where: { id: verification.id },
     });
 
-    const refreshedUser = await this.prisma.user.findUnique({ where: { id: verification.userId } });
+    const refreshedUser = await this.prisma.user.findUnique({
+      where: { id: verification.userId },
+    });
     if (refreshedUser) {
       const nextStatus = this.calculateVerificationState(refreshedUser);
       await this.prisma.user.update({
@@ -280,7 +320,10 @@ export class AuthService implements OnModuleInit {
       });
     }
 
-    const finalUser = await this.prisma.user.findUnique({ where: { id: verification.userId }, include: { wallet: true } });
+    const finalUser = await this.prisma.user.findUnique({
+      where: { id: verification.userId },
+      include: { wallet: true },
+    });
     if (!finalUser) {
       throw new UnauthorizedException('User not found after verification.');
     }
@@ -368,7 +411,10 @@ export class AuthService implements OnModuleInit {
       },
     });
 
-    const token = this.jwtService.sign({ sub: nextUser.id, email: nextUser.email });
+    const token = this.jwtService.sign({
+      sub: nextUser.id,
+      email: nextUser.email,
+    });
     return { token };
   }
 
@@ -408,13 +454,18 @@ export class AuthService implements OnModuleInit {
     return { success: true };
   }
 
-  async resetPassword(token: string, newPassword: string): Promise<{ success: boolean }> {
+  async resetPassword(
+    token: string,
+    newPassword: string,
+  ): Promise<{ success: boolean }> {
     const resetToken = await this.prisma.passwordReset.findUnique({
       where: { token },
     });
 
     if (!resetToken || resetToken.expiresAt < new Date() || resetToken.usedAt) {
-      throw new BadRequestException('Invalid, expired, or already used reset token.');
+      throw new BadRequestException(
+        'Invalid, expired, or already used reset token.',
+      );
     }
 
     const passwordHash = await bcrypt.hash(newPassword, 10);
@@ -447,8 +498,12 @@ export class AuthService implements OnModuleInit {
     let processed = 0;
 
     for (const user of users) {
-      const hasVerifiedMethod = Boolean(user.emailVerified || user.phoneVerified || user.isVerified);
-      const accountExpired = Boolean(user.accountExpiresAt && new Date(user.accountExpiresAt) <= new Date());
+      const hasVerifiedMethod = Boolean(
+        user.emailVerified || user.phoneVerified || user.isVerified,
+      );
+      const accountExpired = Boolean(
+        user.accountExpiresAt && new Date(user.accountExpiresAt) <= new Date(),
+      );
 
       if (!hasVerifiedMethod && accountExpired) {
         await this.prisma.user.delete({ where: { id: user.id } });
@@ -486,7 +541,9 @@ export class AuthService implements OnModuleInit {
   }
 
   private calculateVerificationState(user: Record<string, any>) {
-    const hasVerifiedMethod = Boolean(user.emailVerified || user.phoneVerified || user.isVerified);
+    const hasVerifiedMethod = Boolean(
+      user.emailVerified || user.phoneVerified || user.isVerified,
+    );
     const isVerified = hasVerifiedMethod;
     const isActive = Boolean(user.isActive) || isVerified;
     return {
@@ -494,7 +551,9 @@ export class AuthService implements OnModuleInit {
       phoneVerified: Boolean(user.phoneVerified),
       isVerified,
       isActive,
-      verificationStatus: isVerified ? 'active' : user.verificationStatus || 'pending',
+      verificationStatus: isVerified
+        ? 'active'
+        : user.verificationStatus || 'pending',
       verifiedBadge: isVerified ? 'ItukuApp Verified' : 'Pending Verification',
       lastVerificationAt: isVerified ? new Date() : user.lastVerificationAt,
     };

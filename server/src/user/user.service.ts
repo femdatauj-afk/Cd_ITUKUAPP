@@ -1,4 +1,9 @@
-import { Injectable, NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ConflictException,
+  BadRequestException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { StorageService } from '../storage/storage.service';
 
@@ -17,9 +22,19 @@ export class UserService {
       },
       include: {
         wallet: true,
+        profilePrivacy: true,
         posts: {
           take: 10,
           orderBy: { createdAt: 'desc' },
+          include: {
+            _count: {
+              select: {
+                comments: true,
+                likes: true,
+                shares: true,
+              },
+            },
+          },
         },
         _count: {
           select: {
@@ -36,39 +51,49 @@ export class UserService {
       throw new NotFoundException('User not found.');
     }
 
-    // Get friendship status if viewing another user
-    let friendshipStatus: string | null = null;
-    let followingStatus = false;
-    if (currentUserId && currentUserId !== user.id) {
-      const friendship = await this.prisma.friendship.findFirst({
-        where: {
-          OR: [
-            { userId: currentUserId, friendId: user.id },
-            { userId: user.id, friendId: currentUserId },
-          ],
-        },
-      });
-      friendshipStatus = friendship?.status || null;
+    const viewerIsOwner = currentUserId === user.id;
+    const relationship = await this.getRelationshipSummary(user.id, currentUserId);
+    const privacy = user.profilePrivacy ?? {
+      profileVisibility: 'public',
+      postsVisibility: 'friends',
+      friendsVisibility: 'friends',
+      followersVisibility: 'public',
+      followingVisibility: 'friends',
+      contactVisibility: 'friends',
+    };
 
-      const follow = await this.prisma.follow.findFirst({
-        where: {
-          followerId: currentUserId,
-          followedId: user.id,
-        },
-      });
-      followingStatus = !!follow;
-    }
+    const isPublicProfile = privacy.profileVisibility === 'public';
+    const isFriendView = Boolean(currentUserId && relationship.isFriend);
+    const isFollowerView = Boolean(currentUserId && relationship.isFollowing);
+
+    const canViewPrivateData =
+      viewerIsOwner ||
+      isPublicProfile ||
+      (privacy.profileVisibility === 'friends' && isFriendView) ||
+      (privacy.profileVisibility === 'followers' && (isFollowerView || isFriendView));
 
     return {
-      ...this.sanitizeUser(user),
+      ...this.sanitizeUser(user, canViewPrivateData),
+      privacy,
       stats: {
         postsCount: user._count.posts,
         followersCount: user._count.followers,
         followingCount: user._count.following,
         friendsCount: user._count.friendships,
       },
-      friendshipStatus,
-      isFollowing: followingStatus,
+      friendshipStatus: relationship.friendshipStatus,
+      isFollowing: relationship.isFollowing,
+      isFriend: relationship.isFriend,
+      posts: user.posts.map((post) => ({
+        id: post.id,
+        content: post.content,
+        photo: post.photo,
+        createdAt: post.createdAt,
+        _count: post._count,
+      })),
+      profile: {
+        isPrivate: !canViewPrivateData,
+      },
     };
   }
 
@@ -126,7 +151,9 @@ export class UserService {
     }
 
     if (friendship.friendId !== userId) {
-      throw new BadRequestException('Cannot accept friend request not directed to you.');
+      throw new BadRequestException(
+        'Cannot accept friend request not directed to you.',
+      );
     }
 
     if (friendship.status !== 'pending') {
@@ -141,6 +168,22 @@ export class UserService {
     return { success: true, friendship: updated };
   }
 
+  async unfriend(userId: string, friendId: string) {
+    const result = await this.prisma.friendship.deleteMany({
+      where: {
+        status: 'accepted',
+        OR: [
+          { userId, friendId },
+          { userId: friendId, friendId: userId },
+        ],
+      },
+    });
+    if (result.count === 0) {
+      throw new NotFoundException('Friendship not found.');
+    }
+    return { success: true };
+  }
+
   // Decline friend request
   async declineFriendRequest(userId: string, friendRequestId: string) {
     const friendship = await this.prisma.friendship.findUnique({
@@ -152,7 +195,9 @@ export class UserService {
     }
 
     if (friendship.friendId !== userId) {
-      throw new BadRequestException('Cannot decline friend request not directed to you.');
+      throw new BadRequestException(
+        'Cannot decline friend request not directed to you.',
+      );
     }
 
     await this.prisma.friendship.delete({
@@ -190,7 +235,10 @@ export class UserService {
   async getFriends(userId: string) {
     const friendships = await this.prisma.friendship.findMany({
       where: {
-        OR: [{ userId, status: 'accepted' }, { friendId: userId, status: 'accepted' }],
+        OR: [
+          { userId, status: 'accepted' },
+          { friendId: userId, status: 'accepted' },
+        ],
       },
       include: {
         user: {
@@ -199,6 +247,8 @@ export class UserService {
             username: true,
             fullName: true,
             profilePhoto: true,
+            isVerified: true,
+            verifiedBadge: true,
           },
         },
         friend: {
@@ -207,26 +257,110 @@ export class UserService {
             username: true,
             fullName: true,
             profilePhoto: true,
+            isVerified: true,
+            verifiedBadge: true,
           },
         },
       },
     });
 
-    return friendships.map((f) => (f.userId === userId ? f.friend : f.user));
+    return friendships.map((f) => ({
+      ...(f.userId === userId ? f.friend : f.user),
+      friendshipStatus: 'accepted',
+    }));
+  }
+
+  async getRelationshipSummary(userId: string, currentUserId?: string) {
+    if (!currentUserId || currentUserId === userId) {
+      const [friends, followers, following] = await Promise.all([
+        this.getFriends(userId),
+        this.getFollowers(userId, currentUserId),
+        this.getFollowing(userId),
+      ]);
+      return {
+        friendsCount: friends.length,
+        followersCount: followers.length,
+        followingCount: following.length,
+        friendshipStatus: null,
+        isFollowing: false,
+        isFriend: false,
+      };
+    }
+
+    const [friendship, follow] = await Promise.all([
+      this.prisma.friendship.findFirst({
+        where: {
+          OR: [
+            { userId: currentUserId, friendId: userId },
+            { userId, friendId: currentUserId },
+          ],
+        },
+      }),
+      this.prisma.follow.findFirst({
+        where: {
+          followerId: currentUserId,
+          followedId: userId,
+        },
+      }),
+    ]);
+
+    return {
+      friendsCount: (await this.getFriends(userId)).length,
+      followersCount: (await this.getFollowers(userId, currentUserId)).length,
+      followingCount: (await this.getFollowing(userId)).length,
+      friendshipStatus: friendship?.status ?? null,
+      isFollowing: !!follow,
+      isFriend: friendship?.status === 'accepted',
+    };
   }
 
   async discoverPeople(currentUserId: string, query = '') {
     const needle = query.trim();
     const users = await this.prisma.user.findMany({
-      where: { id: { not: currentUserId }, ...(needle ? { OR: [{ fullName: { contains: needle } }, { username: { contains: needle } }, { village: { contains: needle } }] } : {}) },
-      select: { id: true, fullName: true, username: true, village: true, bio: true, profilePhoto: true, createdAt: true }, take: 50, orderBy: { fullName: 'asc' },
+      where: {
+        id: { not: currentUserId },
+        ...(needle
+          ? {
+              OR: [
+                { fullName: { contains: needle } },
+                { username: { contains: needle } },
+                { village: { contains: needle } },
+              ],
+            }
+          : {}),
+      },
+      select: {
+        id: true,
+        fullName: true,
+        username: true,
+        village: true,
+        bio: true,
+        profilePhoto: true,
+        createdAt: true,
+      },
+      take: 50,
+      orderBy: { fullName: 'asc' },
     });
-    const links = await this.prisma.friendship.findMany({ where: { OR: [{ userId: currentUserId }, { friendId: currentUserId }] } });
-    return users.map((user) => { const link = links.find((item) => item.userId === user.id || item.friendId === user.id); return { ...user, friendshipStatus: link?.status ?? null, isFriend: link?.status === 'accepted' }; });
+    const links = await this.prisma.friendship.findMany({
+      where: { OR: [{ userId: currentUserId }, { friendId: currentUserId }] },
+    });
+    return users.map((user) => {
+      const link = links.find(
+        (item) => item.userId === user.id || item.friendId === user.id,
+      );
+      return {
+        ...user,
+        friendshipStatus: link?.status ?? null,
+        isFriend: link?.status === 'accepted',
+      };
+    });
   }
 
   async getMutualFriends(currentUserId: string, targetUserId: string) {
-    const [mine, theirs] = await Promise.all([this.getFriends(currentUserId), this.getFriends(targetUserId)]);
+    const [mine, theirs] = await Promise.all([
+      this.getFriends(currentUserId),
+      this.getFriends(targetUserId),
+    ]);
     const myIds = new Set(mine.map((user) => user.id));
     return theirs.filter((user) => myIds.has(user.id));
   }
@@ -306,7 +440,9 @@ export class UserService {
 
     return followers.map((f) => ({
       ...f.follower,
-      isFollowedBack: currentUserId ? this.checkIfFollowing(currentUserId, f.follower.id) : false,
+      isFollowedBack: currentUserId
+        ? this.checkIfFollowing(currentUserId, f.follower.id)
+        : false,
     }));
   }
 
@@ -332,7 +468,10 @@ export class UserService {
   }
 
   // Helper method to check if following
-  private async checkIfFollowing(userId: string, targetUserId: string): Promise<boolean> {
+  private async checkIfFollowing(
+    userId: string,
+    targetUserId: string,
+  ): Promise<boolean> {
     const follow = await this.prisma.follow.findFirst({
       where: {
         followerId: userId,
@@ -350,6 +489,9 @@ export class UserService {
       bio?: string;
       profilePhoto?: string;
       coverPhoto?: string;
+      location?: string;
+      website?: string;
+      username?: string;
     },
   ) {
     // Get current user to check for existing photos to delete
@@ -386,8 +528,52 @@ export class UserService {
     return this.sanitizeUser(user);
   }
 
-  private sanitizeUser(user: any) {
+  async getProfilePrivacy(userId: string) {
+    const privacy = await this.prisma.profilePrivacy.upsert({
+      where: { userId },
+      update: {},
+      create: { userId },
+    });
+
+    return privacy;
+  }
+
+  async updateProfilePrivacy(userId: string, values: Record<string, string>) {
+    const allowed = [
+      'profileVisibility',
+      'postsVisibility',
+      'friendsVisibility',
+      'followersVisibility',
+      'followingVisibility',
+      'contactVisibility',
+    ];
+
+    const data = Object.fromEntries(
+      Object.entries(values).filter(([key, value]) =>
+        allowed.includes(key) && typeof value === 'string' && value.trim(),
+      ),
+    );
+
+    if (Object.keys(data).length === 0) {
+      return this.getProfilePrivacy(userId);
+    }
+
+    const privacy = await this.prisma.profilePrivacy.upsert({
+      where: { userId },
+      update: data,
+      create: { userId, ...data },
+    });
+
+    return privacy;
+  }
+
+  private sanitizeUser(user: any, includePrivate = true) {
     const { passwordHash, ...rest } = user;
+    if (!includePrivate) {
+      delete rest.email;
+      delete rest.phone;
+      delete rest.wallet;
+    }
     return rest;
   }
 }

@@ -4,4 +4,6 @@ export class RegisterDto {
   password: string;
   fullName: string;
   village: string;
+  phone?: string;
+  verificationMethod?: 'email' | 'phone';
 }

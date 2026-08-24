@@ -3,9 +3,9 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import logoImage from "../../../ITUKUAPP LOGO.png";
-import { loginUser, saveSession } from "../../lib/api";
+import { getSession, loginUser, saveSession } from "../../lib/api";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -25,6 +25,26 @@ export default function LoginPage() {
 
     try {
       const response = await loginUser({ identifier, password });
+      
+      // Validate response structure
+      if (!response || typeof response !== 'object') {
+        throw new Error('Invalid response from server');
+      }
+
+      if (!response.token || typeof response.token !== 'string' || response.token.length === 0) {
+        throw new Error('Authentication failed: no token received');
+      }
+
+      if (!response.user || typeof response.user !== 'object') {
+        throw new Error('Authentication failed: user data not found');
+      }
+
+      const user = response.user as Record<string, any>;
+      if (!user.id && !user.email) {
+        throw new Error('Authentication failed: incomplete user data');
+      }
+
+      // Save session and redirect only after validation
       saveSession(response);
       router.push("/feed");
     } catch (err) {
@@ -33,6 +53,15 @@ export default function LoginPage() {
       setLoading(false);
     }
   }
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const currentSession = getSession();
+    if (currentSession?.token && currentSession?.user) {
+      router.replace("/feed");
+    }
+  }, [router]);
 
   return (
     <div className="auth-page">

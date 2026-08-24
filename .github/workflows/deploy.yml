@@ -93,7 +93,6 @@ jobs:
       
       - name: Run frontend tests
         run: npm run build
-        continue-on-error: true
       
       - name: Install backend dependencies
         working-directory: server
@@ -102,7 +101,6 @@ jobs:
       - name: Run backend tests
         working-directory: server
         run: npm run test
-        continue-on-error: true
 
   deploy-staging:
     runs-on: ubuntu-latest

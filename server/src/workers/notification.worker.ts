@@ -72,7 +72,8 @@ export class NotificationWorker {
    */
   private async deliverNotification(job: WorkerJob): Promise<void> {
     try {
-      const { userId, type, title, message, relatedId, relatedType } = job.payload;
+      const { userId, type, title, message, relatedId, relatedType } =
+        job.payload;
 
       if (!userId) {
         throw new Error('Missing userId in notification payload');
@@ -117,7 +118,9 @@ export class NotificationWorker {
           timestamp: new Date(),
         });
       } catch (socketError) {
-        this.logger.warn(`Could not send notification via Socket.IO: ${socketError}`);
+        this.logger.warn(
+          `Could not send notification via Socket.IO: ${socketError}`,
+        );
         // Continue - notification is still stored in DB
       }
 

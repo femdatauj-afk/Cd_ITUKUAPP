@@ -73,11 +73,13 @@ export class MetricsService {
       }
 
       this.metrics.requests.total++;
-      this.metrics.requests.byMethod[method] = (this.metrics.requests.byMethod[method] || 0) + 1;
+      this.metrics.requests.byMethod[method] =
+        (this.metrics.requests.byMethod[method] || 0) + 1;
       this.metrics.requests.byStatus[statusCode] =
         (this.metrics.requests.byStatus[statusCode] || 0) + 1;
       this.metrics.requests.averageResponseTime =
-        this.requestTimings.reduce((a, b) => a + b, 0) / this.requestTimings.length;
+        this.requestTimings.reduce((a, b) => a + b, 0) /
+        this.requestTimings.length;
 
       this.logger.debug(`${method} ${path} - ${statusCode} (${duration}ms)`);
     };
@@ -104,7 +106,8 @@ export class MetricsService {
    */
   recordError(type: string, message: string, path?: string): void {
     this.metrics.errors.total++;
-    this.metrics.errors.byType[type] = (this.metrics.errors.byType[type] || 0) + 1;
+    this.metrics.errors.byType[type] =
+      (this.metrics.errors.byType[type] || 0) + 1;
 
     // Add to recent errors
     this.metrics.errors.recent.unshift({
@@ -119,7 +122,9 @@ export class MetricsService {
       this.metrics.errors.recent.pop();
     }
 
-    this.logger.error(`Error (${type}): ${message}${path ? ` at ${path}` : ''}`);
+    this.logger.error(
+      `Error (${type}): ${message}${path ? ` at ${path}` : ''}`,
+    );
   }
 
   /**
@@ -147,11 +152,17 @@ export class MetricsService {
     return {
       totalRequests: this.metrics.requests.total,
       totalErrors: this.metrics.errors.total,
-      errorRate: this.metrics.requests.total > 0
-        ? ((this.metrics.errors.total / this.metrics.requests.total) * 100).toFixed(2) + '%'
-        : '0%',
-      averageResponseTime: this.metrics.requests.averageResponseTime.toFixed(2) + 'ms',
-      averageQueryTime: this.metrics.database.averageQueryTime.toFixed(2) + 'ms',
+      errorRate:
+        this.metrics.requests.total > 0
+          ? (
+              (this.metrics.errors.total / this.metrics.requests.total) *
+              100
+            ).toFixed(2) + '%'
+          : '0%',
+      averageResponseTime:
+        this.metrics.requests.averageResponseTime.toFixed(2) + 'ms',
+      averageQueryTime:
+        this.metrics.database.averageQueryTime.toFixed(2) + 'ms',
       workersJobsProcessed: this.metrics.workers.jobsProcessed,
       workersJobsFailed: this.metrics.workers.jobsFailed,
     };

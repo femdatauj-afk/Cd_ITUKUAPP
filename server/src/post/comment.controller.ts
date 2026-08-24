@@ -26,9 +26,9 @@ export class CommentController {
   async createComment(
     @Param('postId') postId: string,
     @Request() req: any,
-    @Body() body: { content: string },
+    @Body() body: { content: string; parentId?: string; mediaUrl?: string },
   ) {
-    return this.commentService.createComment(postId, req.user.id, body.content);
+    return this.commentService.createComment(postId, req.user.id, body.content, body.parentId, body.mediaUrl);
   }
 
   /**
@@ -41,7 +41,17 @@ export class CommentController {
     @Query('limit') limit: string = '50',
     @Query('offset') offset: string = '0',
   ) {
-    return this.commentService.getPostComments(postId, parseInt(limit), parseInt(offset));
+    return this.commentService.getPostComments(
+      postId,
+      parseInt(limit),
+      parseInt(offset),
+    );
+  }
+
+  @Post(':commentId/reaction')
+  @UseGuards(JwtAuthGuard)
+  async toggleReaction(@Param('commentId') commentId: string, @Request() req: any) {
+    return this.commentService.toggleReaction(commentId, req.user.id);
   }
 
   /**
@@ -64,7 +74,11 @@ export class CommentController {
     @Request() req: any,
     @Body() body: { content: string },
   ) {
-    return this.commentService.updateComment(commentId, req.user.id, body.content);
+    return this.commentService.updateComment(
+      commentId,
+      req.user.id,
+      body.content,
+    );
   }
 
   /**
@@ -77,6 +91,10 @@ export class CommentController {
     @Param('commentId') commentId: string,
     @Request() req: any,
   ) {
-    return this.commentService.deleteComment(commentId, req.user.id, req.user.role);
+    return this.commentService.deleteComment(
+      commentId,
+      req.user.id,
+      req.user.role,
+    );
   }
 }

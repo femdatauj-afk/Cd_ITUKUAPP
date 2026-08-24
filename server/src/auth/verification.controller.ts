@@ -23,13 +23,13 @@ export class VerificationController {
    */
   @Post()
   @UseGuards(JwtAuthGuard)
-  async submitVerification(
-    @Req() req: any,
-    @Body() body: { method?: string },
-  ) {
+  async submitVerification(@Req() req: any, @Body() body: { method?: string }) {
     const method = body.method || 'document';
 
-    return this.verificationService.submitVerificationRequest(req.user.id, method);
+    return this.verificationService.submitVerificationRequest(
+      req.user.id,
+      method,
+    );
   }
 
   /**
@@ -58,12 +58,13 @@ export class VerificationController {
    */
   @Get('audit/:userId')
   @UseGuards(JwtAuthGuard)
-  async getAuditForUser(
-    @Req() req: any,
-    @Param('userId') userId: string,
-  ) {
+  async getAuditForUser(@Req() req: any, @Param('userId') userId: string) {
     // Only allow admins or the user viewing their own audit
-    if (req.user.role !== 'admin' && req.user.role !== 'moderator' && req.user.id !== userId) {
+    if (
+      req.user.role !== 'admin' &&
+      req.user.role !== 'moderator' &&
+      req.user.id !== userId
+    ) {
       throw new BadRequestException('Unauthorized to view this audit trail');
     }
 
@@ -86,7 +87,11 @@ export class VerificationController {
       throw new BadRequestException('Only admins can approve verifications');
     }
 
-    return this.verificationService.approveVerification(verificationId, req.user.id, body.reason);
+    return this.verificationService.approveVerification(
+      verificationId,
+      req.user.id,
+      body.reason,
+    );
   }
 
   /**
@@ -109,7 +114,11 @@ export class VerificationController {
       throw new BadRequestException('Rejection reason is required');
     }
 
-    return this.verificationService.rejectVerification(verificationId, req.user.id, body.reason);
+    return this.verificationService.rejectVerification(
+      verificationId,
+      req.user.id,
+      body.reason,
+    );
   }
 
   /**
@@ -125,13 +134,18 @@ export class VerificationController {
   ) {
     // Only allow admins
     if (req.user.role !== 'admin' && req.user.role !== 'moderator') {
-      throw new BadRequestException('Only admins can view pending verifications');
+      throw new BadRequestException(
+        'Only admins can view pending verifications',
+      );
     }
 
     const limitNum = limit ? Math.min(parseInt(limit), 100) : 50;
     const offsetNum = offset ? parseInt(offset) : 0;
 
-    return this.verificationService.getPendingVerifications(limitNum, offsetNum);
+    return this.verificationService.getPendingVerifications(
+      limitNum,
+      offsetNum,
+    );
   }
 
   /**
@@ -146,17 +160,25 @@ export class VerificationController {
   ) {
     // Only allow admins
     if (req.user.role !== 'admin' && req.user.role !== 'moderator') {
-      throw new BadRequestException('Only admins can bulk reject verifications');
+      throw new BadRequestException(
+        'Only admins can bulk reject verifications',
+      );
     }
 
     if (!body.ids || !Array.isArray(body.ids) || body.ids.length === 0) {
-      throw new BadRequestException('IDs array is required and must not be empty');
+      throw new BadRequestException(
+        'IDs array is required and must not be empty',
+      );
     }
 
     if (!body.reason) {
       throw new BadRequestException('Rejection reason is required');
     }
 
-    return this.verificationService.bulkRejectVerifications(body.ids, req.user.id, body.reason);
+    return this.verificationService.bulkRejectVerifications(
+      body.ids,
+      req.user.id,
+      body.reason,
+    );
   }
 }

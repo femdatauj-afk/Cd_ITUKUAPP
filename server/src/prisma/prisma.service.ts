@@ -1,17 +1,23 @@
 import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '@prisma/client';
 
 @Injectable()
-export class PrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
+export class PrismaService
+  extends PrismaClient
+  implements OnModuleInit, OnModuleDestroy
+{
   constructor() {
     const databaseUrl =
       process.env.DATABASE_URL ??
-      'postgresql://itukuapp_user:itukuapp_password@localhost:5432/itukuapp_db?schema=public';
+      'postgresql://itukuapp_user:itukuapp_password@localhost:55432/itukuapp_db?schema=public';
 
     process.env.DATABASE_URL = databaseUrl;
 
     super({
-      log: process.env.NODE_ENV === 'development' ? ['warn', 'error'] : ['error'],
+      adapter: new PrismaPg({ connectionString: databaseUrl }),
+      log:
+        process.env.NODE_ENV === 'development' ? ['warn', 'error'] : ['error'],
     });
   }
 

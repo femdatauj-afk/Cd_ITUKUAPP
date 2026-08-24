@@ -1,0 +1,18 @@
+
+> itukuapp@0.1.0 dev
+> next dev -p 3003
+
+   ▲ Next.js 15.1.2
+   - Local:        http://localhost:3003
+   - Network:      http://172.24.96.1:3003
+   - Environments: .env
+
+ ✓ Starting...
+ ✓ Ready in 4.4s
+   ▲ Next.js 15.1.2
+   - Local:        http://localhost:3003
+   - Network:      http://172.24.96.1:3003
+   - Environments: .env
+
+ ✓ Starting...
+ ✓ Ready in 6.1s

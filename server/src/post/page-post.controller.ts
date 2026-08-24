@@ -12,11 +12,12 @@ import {
 } from '@nestjs/common';
 import { PagePostService } from './page-post.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { CommentService } from './comment.service';
 
 @Controller('pages/:pageId/posts')
 @UseGuards(JwtAuthGuard)
 export class PagePostController {
-  constructor(private readonly pagePostService: PagePostService) {}
+  constructor(private readonly pagePostService: PagePostService, private readonly commentService: CommentService) {}
 
   /**
    * Create a new post on a page
@@ -74,7 +75,12 @@ export class PagePostController {
     @Body() body: { content?: string; photo?: string },
     @Request() req: any,
   ) {
-    return this.pagePostService.updatePost(postId, req.user.id, body.content, body.photo);
+    return this.pagePostService.updatePost(
+      postId,
+      req.user.id,
+      body.content,
+      body.photo,
+    );
   }
 
   /**
@@ -114,6 +120,31 @@ export class PagePostController {
     @Request() req: any,
   ) {
     return this.pagePostService.unlikePost(postId, req.user.id);
+  }
+
+  @Get(':postId/comments')
+  async getComments(@Param('postId') postId: string, @Query('limit') limit?: string, @Query('offset') offset?: string) {
+    return this.commentService.getPostComments(postId, Number(limit || 50), Number(offset || 0), 'page');
+  }
+
+  @Post(':postId/comments')
+  async createComment(@Param('postId') postId: string, @Body() body: { content: string; parentId?: string; mediaUrl?: string }, @Request() req: any) {
+    return this.commentService.createComment(postId, req.user.id, body.content, body.parentId, body.mediaUrl, 'page');
+  }
+
+  @Post(':postId/comments/:commentId/reaction')
+  async reactToComment(@Param('commentId') commentId: string, @Request() req: any) {
+    return this.commentService.toggleReaction(commentId, req.user.id);
+  }
+
+  @Put(':postId/comments/:commentId')
+  async editComment(@Param('commentId') commentId: string, @Body() body: { content: string }, @Request() req: any) {
+    return this.commentService.updateComment(commentId, req.user.id, body.content);
+  }
+
+  @Delete(':postId/comments/:commentId')
+  async removeComment(@Param('commentId') commentId: string, @Request() req: any) {
+    return this.commentService.deleteComment(commentId, req.user.id, req.user.role, 'page');
   }
 
   /**

@@ -5,6 +5,10 @@ import * as nodemailer from 'nodemailer';
 export class EmailService {
   private transporter: nodemailer.Transporter;
   private readonly logger = new Logger(EmailService.name);
+  private readonly emailConfigured = Boolean(
+    process.env.SMTP_USER && process.env.SMTP_PASS,
+  );
+  private warnedAboutMissingConfig = false;
 
   constructor() {
     this.transporter = nodemailer.createTransport({
@@ -18,9 +22,23 @@ export class EmailService {
     });
   }
 
+  private async sendMail(options: nodemailer.SendMailOptions): Promise<void> {
+    if (!this.emailConfigured) {
+      if (!this.warnedAboutMissingConfig) {
+        this.logger.warn(
+          'SMTP credentials are not configured; email delivery is disabled for this environment.',
+        );
+        this.warnedAboutMissingConfig = true;
+      }
+      return;
+    }
+
+    await this.transporter.sendMail(options);
+  }
+
   async sendEmailVerification(email: string, token: string): Promise<void> {
     const verificationUrl = `${process.env.APP_URL || 'http://localhost:3000'}/auth/verify-email?token=${token}`;
-    
+
     const htmlContent = `
       <h1>Verify Your Email</h1>
       <p>Welcome to ItukuApp! Please verify your email by clicking the link below:</p>
@@ -30,7 +48,7 @@ export class EmailService {
     `;
 
     try {
-      await this.transporter.sendMail({
+      await this.sendMail({
         from: process.env.SMTP_FROM || 'noreply@itukuapp.com',
         to: email,
         subject: 'Verify Your ItukuApp Email',
@@ -38,7 +56,10 @@ export class EmailService {
       });
       this.logger.log(`Email verification sent to ${email}`);
     } catch (error) {
-      this.logger.error(`Failed to send email verification to ${email}:`, error);
+      this.logger.error(
+        `Failed to send email verification to ${email}:`,
+        error,
+      );
       throw error;
     }
   }
@@ -52,7 +73,7 @@ export class EmailService {
     `;
 
     try {
-      await this.transporter.sendMail({
+      await this.sendMail({
         from: process.env.SMTP_FROM || 'noreply@itukuapp.com',
         to: email,
         subject: 'Your ItukuApp OTP Code',
@@ -67,7 +88,7 @@ export class EmailService {
 
   async sendPasswordReset(email: string, token: string): Promise<void> {
     const resetUrl = `${process.env.APP_URL || 'http://localhost:3000'}/auth/reset-password?token=${token}`;
-    
+
     const htmlContent = `
       <h1>Reset Your Password</h1>
       <p>Click the link below to reset your password:</p>
@@ -78,7 +99,7 @@ export class EmailService {
     `;
 
     try {
-      await this.transporter.sendMail({
+      await this.sendMail({
         from: process.env.SMTP_FROM || 'noreply@itukuapp.com',
         to: email,
         subject: 'Reset Your ItukuApp Password',
@@ -86,7 +107,10 @@ export class EmailService {
       });
       this.logger.log(`Password reset email sent to ${email}`);
     } catch (error) {
-      this.logger.error(`Failed to send password reset email to ${email}:`, error);
+      this.logger.error(
+        `Failed to send password reset email to ${email}:`,
+        error,
+      );
       throw error;
     }
   }
@@ -100,7 +124,7 @@ export class EmailService {
     `;
 
     try {
-      await this.transporter.sendMail({
+      await this.sendMail({
         from: process.env.SMTP_FROM || 'noreply@itukuapp.com',
         to: email,
         subject: 'Welcome to ItukuApp!',

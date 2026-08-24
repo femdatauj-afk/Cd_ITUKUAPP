@@ -1,4 +1,22 @@
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import { config as loadEnv } from 'dotenv';
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
+
+function loadDotEnvFromProjectRoot(): void {
+  const candidatePaths = [
+    path.resolve(process.cwd(), '.env'),
+    path.resolve(__dirname, '..', '.env'),
+    path.resolve(__dirname, '..', '..', '.env'),
+  ];
+
+  for (const filePath of candidatePaths) {
+    if (fs.existsSync(filePath)) {
+      loadEnv({ path: filePath, override: false });
+      return;
+    }
+  }
+}
 
 export interface EnvironmentConfig {
   nodeEnv: 'development' | 'staging' | 'production';
@@ -19,6 +37,7 @@ export class EnvironmentService {
   private config: EnvironmentConfig;
 
   constructor() {
+    loadDotEnvFromProjectRoot();
     this.config = this.loadConfiguration();
     this.validateConfiguration();
   }
@@ -28,14 +47,23 @@ export class EnvironmentService {
    */
   private loadConfiguration(): EnvironmentConfig {
     return {
-      nodeEnv: (process.env.NODE_ENV as 'development' | 'staging' | 'production') || 'development',
+      nodeEnv:
+        (process.env.NODE_ENV as 'development' | 'staging' | 'production') ||
+        'development',
       port: parseInt(process.env.PORT || '3000'),
       jwtSecret: process.env.JWT_SECRET || '',
       databaseUrl: process.env.DATABASE_URL || '',
       jwtExpiresIn: process.env.JWT_EXPIRES_IN || '24h',
-      corsOrigins: (process.env.CORS_ORIGINS || 'http://localhost:3000').split(','),
+      corsOrigins: (
+        process.env.CORS_ORIGINS ||
+        'http://localhost:3002'
+      )
+        .split(',')
+        .map((origin) => origin.trim()),
       rateLimitWindowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '60000'), // 1 minute
-      rateLimitMaxRequests: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS || '100'),
+      rateLimitMaxRequests: parseInt(
+        process.env.RATE_LIMIT_MAX_REQUESTS || '100',
+      ),
       logLevel: process.env.LOG_LEVEL || 'log',
       cdnUrl: process.env.CDN_URL,
     };
@@ -91,7 +119,9 @@ export class EnvironmentService {
     this.logger.log(`  Port: ${this.config.port}`);
     this.logger.log(`  JWT Expiry: ${this.config.jwtExpiresIn}`);
     this.logger.log(`  CORS Origins: ${this.config.corsOrigins.join(', ')}`);
-    this.logger.log(`  Rate Limit: ${this.config.rateLimitMaxRequests} requests per ${this.config.rateLimitWindowMs}ms`);
+    this.logger.log(
+      `  Rate Limit: ${this.config.rateLimitMaxRequests} requests per ${this.config.rateLimitWindowMs}ms`,
+    );
     this.logger.log(`  Log Level: ${this.config.logLevel}`);
   }
 
@@ -134,7 +164,10 @@ export class EnvironmentService {
    * Validate CORS origin
    */
   isAllowedOrigin(origin: string): boolean {
-    return this.config.corsOrigins.includes(origin) || this.config.corsOrigins.includes('*');
+    return (
+      this.config.corsOrigins.includes(origin) ||
+      this.config.corsOrigins.includes('*')
+    );
   }
 
   /**

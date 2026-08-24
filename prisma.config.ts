@@ -7,6 +7,6 @@ export default defineConfig({
     path: "server/prisma/migrations",
   },
   datasource: {
-    url: process.env.DATABASE_URL ?? "file:./server/dev.db",
+    url: process.env.DATABASE_URL ?? "postgresql://itukuapp_user:itukuapp_password@localhost:55432/itukuapp_db?schema=public",
   },
 });

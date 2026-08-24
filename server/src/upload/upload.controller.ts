@@ -46,15 +46,15 @@ export class UploadController {
         if (allowedMimes.includes(file.mimetype)) {
           cb(null, true);
         } else {
-          cb(new BadRequestException(`File type ${file.mimetype} not allowed`), false);
+          cb(
+            new BadRequestException(`File type ${file.mimetype} not allowed`),
+            false,
+          );
         }
       },
     }),
   )
-  async uploadFile(
-    @UploadedFile() file: Express.Multer.File,
-    @Req() req: any,
-  ) {
+  async uploadFile(@UploadedFile() file: Express.Multer.File, @Req() req: any) {
     if (!file) {
       throw new BadRequestException('No file provided');
     }
@@ -66,7 +66,10 @@ export class UploadController {
     const userDirectory = `${directory}/${userId}`;
 
     try {
-      const { url, key } = await this.storageService.upload(file, userDirectory);
+      const { url, key } = await this.storageService.upload(
+        file,
+        userDirectory,
+      );
 
       return {
         success: true,
@@ -100,7 +103,12 @@ export class UploadController {
         if (allowedMimes.includes(file.mimetype)) {
           cb(null, true);
         } else {
-          cb(new BadRequestException('Only JPEG, PNG, and WebP images allowed for profile photos'), false);
+          cb(
+            new BadRequestException(
+              'Only JPEG, PNG, and WebP images allowed for profile photos',
+            ),
+            false,
+          );
         }
       },
     }),
@@ -117,7 +125,10 @@ export class UploadController {
     const userDirectory = `profiles/${userId}`;
 
     try {
-      const { url, key } = await this.storageService.upload(file, userDirectory);
+      const { url, key } = await this.storageService.upload(
+        file,
+        userDirectory,
+      );
 
       return {
         success: true,
@@ -151,7 +162,12 @@ export class UploadController {
         if (allowedMimes.includes(file.mimetype)) {
           cb(null, true);
         } else {
-          cb(new BadRequestException('Only JPEG, PNG, and WebP images allowed for cover photos'), false);
+          cb(
+            new BadRequestException(
+              'Only JPEG, PNG, and WebP images allowed for cover photos',
+            ),
+            false,
+          );
         }
       },
     }),
@@ -168,7 +184,10 @@ export class UploadController {
     const userDirectory = `covers/${userId}`;
 
     try {
-      const { url, key } = await this.storageService.upload(file, userDirectory);
+      const { url, key } = await this.storageService.upload(
+        file,
+        userDirectory,
+      );
 
       return {
         success: true,
@@ -197,12 +216,20 @@ export class UploadController {
         fileSize: 10 * 1024 * 1024, // 10MB for marketplace images
       },
       fileFilter: (req, file, cb) => {
-        const allowedMimes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+        const allowedMimes = [
+          'image/jpeg',
+          'image/png',
+          'image/webp',
+          'image/gif',
+        ];
 
         if (allowedMimes.includes(file.mimetype)) {
           cb(null, true);
         } else {
-          cb(new BadRequestException('Only image files allowed for marketplace'), false);
+          cb(
+            new BadRequestException('Only image files allowed for marketplace'),
+            false,
+          );
         }
       },
     }),
@@ -219,7 +246,10 @@ export class UploadController {
     const userDirectory = `marketplace/${userId}`;
 
     try {
-      const { url, key } = await this.storageService.upload(file, userDirectory);
+      const { url, key } = await this.storageService.upload(
+        file,
+        userDirectory,
+      );
 
       return {
         success: true,

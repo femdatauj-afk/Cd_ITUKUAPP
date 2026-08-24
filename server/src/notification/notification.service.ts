@@ -60,8 +60,15 @@ export class NotificationService {
   /**
    * Get all notifications for a user
    */
-  async getNotifications(userId: string, unreadOnly: boolean = false, limit: number = 50, offset: number = 0) {
-    this.logger.log(`Fetching notifications for user ${userId} (unreadOnly: ${unreadOnly})`);
+  async getNotifications(
+    userId: string,
+    unreadOnly: boolean = false,
+    limit: number = 50,
+    offset: number = 0,
+  ) {
+    this.logger.log(
+      `Fetching notifications for user ${userId} (unreadOnly: ${unreadOnly})`,
+    );
 
     const where = { userId };
     if (unreadOnly) {
@@ -115,7 +122,9 @@ export class NotificationService {
    * Mark a notification as read
    */
   async markAsRead(notificationId: string, userId: string) {
-    this.logger.log(`Marking notification ${notificationId} as read for user ${userId}`);
+    this.logger.log(
+      `Marking notification ${notificationId} as read for user ${userId}`,
+    );
 
     const notification = await this.prisma.notification.findUnique({
       where: { id: notificationId },
@@ -166,7 +175,9 @@ export class NotificationService {
    * Delete a notification
    */
   async deleteNotification(notificationId: string, userId: string) {
-    this.logger.log(`Deleting notification ${notificationId} for user ${userId}`);
+    this.logger.log(
+      `Deleting notification ${notificationId} for user ${userId}`,
+    );
 
     const notification = await this.prisma.notification.findUnique({
       where: { id: notificationId },
@@ -243,16 +254,29 @@ export class NotificationService {
     relatedId?: string,
     relatedType?: string,
   ) {
-    this.logger.log(`Broadcasting notification to ${userIds.length} users: ${type}`);
+    this.logger.log(
+      `Broadcasting notification to ${userIds.length} users: ${type}`,
+    );
 
-    const results: Array<{ userId: string; status: string; message?: string }> = [];
+    const results: Array<{ userId: string; status: string; message?: string }> =
+      [];
 
     for (const userId of userIds) {
       try {
-        await this.createNotification(userId, type, title, message, relatedId, relatedType);
+        await this.createNotification(
+          userId,
+          type,
+          title,
+          message,
+          relatedId,
+          relatedType,
+        );
         results.push({ userId, status: 'success' });
       } catch (error) {
-        this.logger.error(`Error creating notification for user ${userId}:`, error);
+        this.logger.error(
+          `Error creating notification for user ${userId}:`,
+          error,
+        );
         results.push({ userId, status: 'error', message: error.message });
       }
     }
@@ -266,7 +290,12 @@ export class NotificationService {
   /**
    * Get notifications by type
    */
-  async getNotificationsByType(userId: string, type: string, limit: number = 50, offset: number = 0) {
+  async getNotificationsByType(
+    userId: string,
+    type: string,
+    limit: number = 50,
+    offset: number = 0,
+  ) {
     this.logger.log(`Fetching ${type} notifications for user ${userId}`);
 
     const [notifications, total] = await Promise.all([

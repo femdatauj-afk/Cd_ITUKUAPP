@@ -6,6 +6,9 @@
   --deep: #084b29;
   --soft: #eaf4e9;
   --gold: #e8ad20;
+  --coin-blue: #1976ed;
+  --coin-blue-deep: #0b64c5;
+  --coin-blue-soft: #edf5ff;
   --line: #e1eae0;
   --muted: #697369;
   --facebook: #1877f2;
@@ -28,6 +31,19 @@ button, input { font: inherit; }
 .brand { font-weight: 700; font-size: 22px; display: flex; align-items: center; gap: 8px; color: var(--green); }
 .brand > span > span { color: var(--gold); }
 .brand-logo { object-fit: contain; }
+.brand-logo[width] { width: auto; height: auto; }
+
+.coin-symbol {
+  display: inline-grid;
+  width: 1.15em;
+  height: 1.15em;
+  place-items: center;
+  border: 2px solid currentColor;
+  border-radius: 50%;
+  font-family: Georgia, serif;
+  font-size: 0.8em;
+  line-height: 1;
+}
 
 .landing-page {
   min-height: 100vh;
@@ -53,6 +69,11 @@ button, input { font: inherit; }
   border-radius: 22px;
   box-shadow: 0 12px 30px rgba(15, 35, 20, 0.08);
   backdrop-filter: blur(8px);
+}
+
+.landing-page section[id],
+.landing-page footer {
+  scroll-margin-top: 118px;
 }
 
 .nav-icons {
@@ -447,6 +468,11 @@ footer {
   width: 38px; height: 38px; border-radius: 50%; border: 1px solid #e6eaf0; background: #f0f2f5; color: #1f2937; display: grid; place-items: center; cursor: pointer;
 }
 .icon-pill svg { width: 18px; height: 18px; }
+.notification-button { position: relative; }
+.notification-count { position: absolute; right: -2px; top: -4px; min-width: 17px; height: 17px; padding: 0 4px; border-radius: 999px; display: grid; place-items: center; background: var(--gold); color: #213322; font-size: 9px; font-weight: 800; border: 2px solid #fff; }
+.account-chip { display: flex; align-items: center; gap: 7px; max-width: 190px; padding: 7px 10px; border: 1px solid #e6eaf0; border-radius: 999px; background: #f7faf6; color: #26372b; font-size: 12px; font-weight: 700; }
+.account-chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.account-chip:hover { border-color: #b8d2b9; color: var(--green); }
 
 .app-shell-layout { display: grid; grid-template-columns: 260px minmax(0,1fr); align-items: start; }
 .side-nav {
@@ -471,6 +497,13 @@ footer {
 .page-intro .eyebrow { color: #f2cc5d; }
 .page-intro h1 { font-family: "DM Sans", Arial, sans-serif; letter-spacing: -1.2px; font-size: 32px; position: relative; z-index: 1; }
 .page-intro .intro { color: #d9ecdd; font-size: 14px; margin: 9px 0 0; position: relative; z-index: 1; }
+
+.app-footer { max-width: 1180px; margin: 0 auto; padding: 22px clamp(22px, 6vw, 96px) 30px; display: flex; align-items: center; gap: 18px; border-top: 1px solid #e3ebe2; color: #627066; font-size: 12px; }
+.app-footer-brand { display: flex; align-items: center; gap: 8px; color: var(--green); font-size: 16px; }
+.app-footer-brand strong span { color: var(--gold); }
+.app-footer-links { display: flex; flex-wrap: wrap; gap: 8px 16px; margin-left: auto; }
+.app-footer-links a:hover { color: var(--green); }
+.app-footer small { color: #849087; }
 
 .chat-shell {
   display: grid;
@@ -1382,6 +1415,7 @@ footer {
     padding: 22px 18px 24px;
     grid-template-columns: 1fr;
     gap: 26px;
+    scroll-margin-top: 104px;
   }
 
   .hero-copy h1 {
@@ -1426,6 +1460,9 @@ footer {
   .topbar-left { flex: 1; }
   .header-search { max-width: none; }
   .topbar { padding: 12px 14px; }
+  .topnav { display: none; }
+  .account-chip span { display: none; }
+  .account-chip { padding: 8px; }
   .mobile-dock {
     position: fixed; z-index: 20; display: flex; bottom: 0; left: 0; right: 0; height: 67px; background: #fff; border-top: 1px solid #e7ece5; justify-content: space-around; align-items: center; padding: 0 12px; box-shadow: 0 -8px 24px #0c341d14;
   }
@@ -1434,6 +1471,8 @@ footer {
   .mobile-dock svg { width: 18px; height: 18px; }
   .footer { grid-template-columns: 1fr; }
   .footer-links { justify-content: flex-start; }
+  .app-footer { align-items: flex-start; flex-direction: column; padding: 20px 15px 84px; }
+  .app-footer-links { margin-left: 0; }
 }
 
 /* Profile Link Styles */
@@ -1463,4 +1502,31 @@ footer {
 
 .profile-link-header:hover {
   color: var(--facebook);
+}
+
+.wallet-card {
+  background: linear-gradient(118deg, var(--coin-blue), #146fd2 62%, var(--coin-blue-deep)) !important;
+  box-shadow: 0 16px 30px rgba(11, 100, 197, 0.22) !important;
+}
+
+.coin-orbit {
+  border: 2px solid #fff;
+  background: transparent !important;
+  color: #fff !important;
+  font-family: Georgia, serif;
+}
+
+.wallet-action {
+  background: rgba(255, 255, 255, 0.16) !important;
+  color: #fff !important;
+}
+
+.wallet-action.subtle {
+  background: #fff !important;
+  color: var(--coin-blue) !important;
+}
+
+.coin-badge {
+  background: var(--coin-blue-soft) !important;
+  color: var(--coin-blue-deep) !important;
 }

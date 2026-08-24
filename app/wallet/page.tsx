@@ -3,8 +3,9 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { AppShell } from '../components/app-shell';
+import { fetchUserDirectory, fetchWalletBalance, fetchWalletLedger, fetchWalletTransfers, getSession, requestWalletWithdrawal, sendWalletCoins } from '../lib/api';
 
-type Tab = 'overview' | 'transactions' | 'transfer';
+type Tab = 'overview' | 'transactions' | 'transfer' | 'withdraw';
 
 interface Transaction {
   id: string;
@@ -15,60 +16,70 @@ interface Transaction {
   balance: number;
 }
 
+function CoinMark({ compact = false }: { compact?: boolean }) {
+  return <span className={`coin-mark${compact ? ' compact' : ''}`} aria-label="Ituku Coin">₿</span>;
+}
+
+function CoinAmount({ amount, sign = '' }: { amount: number; sign?: string }) {
+  return <span className="coin-amount"><CoinMark compact />{sign}{amount.toLocaleString('en-US')}</span>;
+}
+
 export default function WalletPage() {
   const [activeTab, setActiveTab] = useState<Tab>('overview');
-  const [balance, setBalance] = useState<number>(1000000);
+  const [balance, setBalance] = useState<number>(0);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [transferAmount, setTransferAmount] = useState('');
   const [transferRecipient, setTransferRecipient] = useState('');
   const [transferError, setTransferError] = useState('');
   const [transferSuccess, setTransferSuccess] = useState(false);
+  const [transferSummary, setTransferSummary] = useState('');
+  const [withdrawAmount, setWithdrawAmount] = useState('');
+  const [bankAccount, setBankAccount] = useState('');
+  const [accountHolderName, setAccountHolderName] = useState('');
+  const [withdrawError, setWithdrawError] = useState('');
+  const [withdrawSuccess, setWithdrawSuccess] = useState(false);
+  const [pageError, setPageError] = useState('');
 
   useEffect(() => {
-    // Simulate loading wallet data
-    const mockTransactions: Transaction[] = [
-      {
-        id: '1',
-        type: 'credit',
-        amount: 50000,
-        description: 'Received from marketplace sale',
-        timestamp: new Date(Date.now() - 86400000 * 2),
-        balance: 1000000,
-      },
-      {
-        id: '2',
-        type: 'debit',
-        amount: 10000,
-        description: 'Marketplace purchase - "Designer Handbag"',
-        timestamp: new Date(Date.now() - 86400000 * 5),
-        balance: 950000,
-      },
-      {
-        id: '3',
-        type: 'credit',
-        amount: 25000,
-        description: 'Community donation from group',
-        timestamp: new Date(Date.now() - 86400000 * 10),
-        balance: 960000,
-      },
-      {
-        id: '4',
-        type: 'debit',
-        amount: 5000,
-        description: 'Transfer to @AminaEde',
-        timestamp: new Date(Date.now() - 86400000 * 15),
-        balance: 935000,
-      },
-    ];
+    if (!getSession()?.token) {
+      setPageError('Sign in to view your wallet and transactions.');
+      setLoading(false);
+      return;
+    }
 
-    setTransactions(mockTransactions);
-    setLoading(false);
+    Promise.all([fetchWalletBalance(), fetchWalletLedger(), fetchWalletTransfers()])
+      .then(([wallet, ledger, transfers]) => {
+        setBalance(wallet.balance);
+        const transfersByReference = new Map(transfers.map((entry) => [entry.id, entry]));
+        let runningBalance = wallet.balance;
+        const ledgerItems = ledger.map((entry) => {
+          const transfer = entry.referenceId ? transfersByReference.get(entry.referenceId) : undefined;
+          const item = {
+            id: entry.id,
+            type: entry.amount >= 0 ? 'credit' as const : 'debit' as const,
+            amount: Math.abs(entry.amount),
+            description: transfer
+              ? transfer.type === 'received'
+                ? `Received from @${transfer.sender?.username || 'user'}`
+                : `Transfer to @${transfer.receiver?.username || 'user'}`
+              : entry.description,
+            timestamp: new Date(entry.createdAt),
+            balance: runningBalance,
+          };
+          runningBalance -= entry.amount;
+          return item;
+        });
+        setTransactions(ledgerItems);
+      })
+      .catch((error) => setPageError(error instanceof Error ? error.message : 'Wallet data is unavailable.'))
+      .finally(() => setLoading(false));
   }, []);
 
-  const handleTransfer = () => {
+  const handleTransfer = async () => {
     setTransferError('');
     setTransferSuccess(false);
+    setTransferSummary('');
 
     // Validation
     if (!transferRecipient.trim()) {
@@ -88,25 +99,57 @@ export default function WalletPage() {
       return;
     }
 
-    // Simulate transfer
-    const newBalance = balance - Number(transferAmount);
-    setBalance(newBalance);
+    const recipientQuery = transferRecipient.trim().replace(/^@/, '');
+    try {
+      const recipients = await fetchUserDirectory(recipientQuery);
+      const recipient = recipients.find((user) => user.username.toLowerCase() === recipientQuery.toLowerCase());
+      if (!recipient) {
+        setTransferError('Recipient username was not found.');
+        return;
+      }
 
-    const newTransaction: Transaction = {
-      id: String(transactions.length + 1),
-      type: 'debit',
-      amount: Number(transferAmount),
-      description: `Transfer to @${transferRecipient}`,
-      timestamp: new Date(),
-      balance: newBalance,
-    };
-
-    setTransactions([newTransaction, ...transactions]);
+      const result = await sendWalletCoins(recipient.id, Number(transferAmount));
+      const sentAmount = Number(transferAmount);
+      setBalance(result.senderBalance);
+      setTransactions((current) => [{ id: `transfer-${Date.now()}`, type: 'debit', amount: sentAmount, description: `Transfer to @${recipient.username}`, timestamp: new Date(), balance: result.senderBalance }, ...current]);
+      setTransferSuccess(true);
+      setTransferSummary(`Sent ${formatCurrency(sentAmount)} Ituku Coins to @${recipient.username}.`);
+    } catch (error) {
+      setTransferError(error instanceof Error ? error.message : 'Transfer failed.');
+      return;
+    }
     setTransferAmount('');
     setTransferRecipient('');
-    setTransferSuccess(true);
 
     setTimeout(() => setTransferSuccess(false), 5000);
+  };
+
+  const handleWithdrawal = async () => {
+    setWithdrawError('');
+    setWithdrawSuccess(false);
+    const amount = Number(withdrawAmount);
+    if (!Number.isInteger(amount) || amount <= 0) {
+      setWithdrawError('Enter a whole number of coins greater than 0.');
+      return;
+    }
+    if (amount > balance) {
+      setWithdrawError('Insufficient balance.');
+      return;
+    }
+    if (!bankAccount.trim() || !accountHolderName.trim()) {
+      setWithdrawError('Bank account and account holder name are required.');
+      return;
+    }
+    try {
+      const result = await requestWalletWithdrawal(amount, bankAccount.trim(), accountHolderName.trim());
+      setBalance(result.remainingBalance);
+      setWithdrawAmount('');
+      setBankAccount('');
+      setAccountHolderName('');
+      setWithdrawSuccess(true);
+    } catch (error) {
+      setWithdrawError(error instanceof Error ? error.message : 'Withdrawal request failed.');
+    }
   };
 
   const formatDate = (date: Date) => {
@@ -123,27 +166,40 @@ export default function WalletPage() {
     return amount.toLocaleString('en-US');
   };
 
+  const totalEarned = transactions.filter((transaction) => transaction.type === 'credit').reduce((sum, transaction) => sum + transaction.amount, 0);
+  const totalSpent = transactions.filter((transaction) => transaction.type === 'debit').reduce((sum, transaction) => sum + transaction.amount, 0);
+
   return (
     <AppShell title="Wallet" subtitle="Manage your Ituku Coins">
       <div className="wallet-container">
+        {pageError && <div className="error-message">{pageError}</div>}
         {/* Balance Card */}
         <div className="balance-card">
           <div className="balance-content">
+            <div className="wallet-card-eyebrow"><span className="wallet-card-dot" /> ITUKU WALLET</div>
             <p className="balance-label">Available Balance</p>
             <div className="balance-amount">
-              <span className="coin-icon">₿</span>
+              <CoinMark />
               <span className="amount">{formatCurrency(balance)}</span>
             </div>
             <p className="balance-currency">Ituku Coins</p>
           </div>
           <div className="balance-actions">
-            <button className="action-button primary">
-              <span>↓</span> Add Funds
-            </button>
-            <button className="action-button secondary">
-              <span>→</span> Withdraw
+            <Link className="action-button primary" href="/coins">
+              <span aria-hidden="true">↓</span> Add Funds
+            </Link>
+            <button className="action-button secondary" type="button" onClick={() => setActiveTab('withdraw')}>
+              <span aria-hidden="true">→</span> Withdraw
             </button>
           </div>
+        </div>
+
+        <div className="wallet-section-heading">
+          <div>
+            <p className="section-kicker">YOUR MONEY, IN MOTION</p>
+            <h2>Keep your Ituku circle moving.</h2>
+          </div>
+          <span className="secure-note"><span aria-hidden="true">●</span> Secure wallet</span>
         </div>
 
         {/* Tabs */}
@@ -166,6 +222,12 @@ export default function WalletPage() {
           >
             Send Coins
           </button>
+          <button
+            className={`tab ${activeTab === 'withdraw' ? 'active' : ''}`}
+            onClick={() => setActiveTab('withdraw')}
+          >
+            Withdraw
+          </button>
         </div>
 
         {/* Tab Content */}
@@ -174,26 +236,30 @@ export default function WalletPage() {
             <div className="overview-section">
               <div className="stats-grid">
                 <div className="stat-card">
+                  <span className="stat-mark earned">↘</span>
                   <p className="stat-label">Total Earned</p>
-                  <p className="stat-value">₿ 250,000</p>
+                  <p className="stat-value"><CoinAmount amount={totalEarned} /></p>
                   <p className="stat-change">+12% this month</p>
                 </div>
 
                 <div className="stat-card">
+                  <span className="stat-mark spent">↗</span>
                   <p className="stat-label">Total Spent</p>
-                  <p className="stat-value">₿ 125,000</p>
+                  <p className="stat-value"><CoinAmount amount={totalSpent} /></p>
                   <p className="stat-change">-5% this month</p>
                 </div>
 
                 <div className="stat-card">
+                  <span className="stat-mark pending">◷</span>
                   <p className="stat-label">Pending</p>
-                  <p className="stat-value">₿ 0</p>
+                  <p className="stat-value"><CoinAmount amount={0} /></p>
                   <p className="stat-change">No pending transactions</p>
                 </div>
 
                 <div className="stat-card">
+                  <span className="stat-mark market">◌</span>
                   <p className="stat-label">Marketplace</p>
-                  <p className="stat-value">₿ 500,000</p>
+                  <p className="stat-value"><CoinAmount amount={balance} /></p>
                   <p className="stat-change">Available for trading</p>
                 </div>
               </div>
@@ -210,7 +276,7 @@ export default function WalletPage() {
                       <p className="activity-date">{formatDate(tx.timestamp)}</p>
                     </div>
                     <div className={`activity-amount ${tx.type}`}>
-                      {tx.type === 'credit' ? '+' : '-'}₿ {formatCurrency(tx.amount)}
+                      <CoinAmount amount={tx.amount} sign={tx.type === 'credit' ? '+' : '-'} />
                     </div>
                   </div>
                 ))}
@@ -247,9 +313,9 @@ export default function WalletPage() {
                       </div>
                       <div className="transaction-amount">
                         <p className={`amount ${tx.type}`}>
-                          {tx.type === 'credit' ? '+' : '-'}₿ {formatCurrency(tx.amount)}
+                          <CoinAmount amount={tx.amount} sign={tx.type === 'credit' ? '+' : '-'} />
                         </p>
-                        <p className="balance">Balance: ₿ {formatCurrency(tx.balance)}</p>
+                        <p className="balance">Balance: <CoinAmount amount={tx.balance} /></p>
                       </div>
                     </div>
                   ))}
@@ -268,7 +334,7 @@ export default function WalletPage() {
 
               {transferSuccess && (
                 <div className="success-message">
-                  ✓ Successfully transferred ₿ {formatCurrency(Number(transferAmount))} to @{transferRecipient}
+                  ✓ {transferSummary || 'Transfer sent successfully.'}
                 </div>
               )}
 
@@ -294,7 +360,7 @@ export default function WalletPage() {
                 <div className="form-group">
                   <label htmlFor="amount">Amount (Ituku Coins)</label>
                   <div className="amount-input-group">
-                    <span className="currency-symbol">₿</span>
+                    <CoinMark compact />
                     <input
                       type="number"
                       id="amount"
@@ -305,7 +371,7 @@ export default function WalletPage() {
                       className={transferError && !transferAmount ? 'error' : ''}
                     />
                   </div>
-                  <p className="balance-hint">Available: ₿ {formatCurrency(balance)}</p>
+                  <p className="balance-hint">Available: <CoinAmount amount={balance} /></p>
                 </div>
 
                 <button
@@ -326,6 +392,34 @@ export default function WalletPage() {
                   <li>Recipient will receive an in-app notification</li>
                 </ul>
               </div>
+            </div>
+          )}
+
+          {activeTab === 'withdraw' && (
+            <div className="transfer-section">
+              <h3>Withdraw Ituku Coins</h3>
+              {withdrawSuccess && <div className="success-message">✓ Withdrawal request submitted for review.</div>}
+              {withdrawError && <div className="error-message">✗ {withdrawError}</div>}
+              <div className="transfer-form">
+                <div className="form-group">
+                  <label htmlFor="withdrawAmount">Amount (Ituku Coins)</label>
+                  <div className="amount-input-group">
+                    <CoinMark compact />
+                    <input id="withdrawAmount" type="number" min="1" value={withdrawAmount} onChange={(event) => setWithdrawAmount(event.target.value)} placeholder="0" />
+                  </div>
+                  <p className="balance-hint">Available: <CoinAmount amount={balance} /></p>
+                </div>
+                <div className="form-group">
+                  <label htmlFor="accountHolderName">Account holder name</label>
+                  <input id="accountHolderName" value={accountHolderName} onChange={(event) => setAccountHolderName(event.target.value)} placeholder="Full name on account" />
+                </div>
+                <div className="form-group">
+                  <label htmlFor="bankAccount">Bank account</label>
+                  <input id="bankAccount" value={bankAccount} onChange={(event) => setBankAccount(event.target.value)} placeholder="Account number" inputMode="numeric" />
+                </div>
+                <button className="send-button" type="button" onClick={handleWithdrawal}>Request withdrawal</button>
+              </div>
+              <div className="transfer-info"><h4>Withdrawal status</h4><ul><li>Requests are deducted from your available balance.</li><li>An administrator reviews each request before completion.</li><li>Rejected requests are refunded by the backend.</li></ul></div>
             </div>
           )}
         </div>
@@ -861,6 +955,130 @@ export default function WalletPage() {
           .stat-value {
             font-size: 18px;
           }
+        }
+
+        .wallet-container { max-width: 1120px; padding: 30px 24px 56px; }
+        .balance-card {
+          position: relative;
+          overflow: hidden;
+          min-height: 230px;
+          margin-bottom: 28px;
+          padding: 32px 36px;
+          border: 1px solid rgba(255,255,255,0.14);
+          border-radius: 24px;
+          background: linear-gradient(118deg, var(--coin-blue) 0%, #146fd2 62%, var(--coin-blue-deep) 100%);
+          box-shadow: 0 20px 42px rgba(11,100,197,0.22);
+        }
+        .balance-card::after {
+          position: absolute;
+          right: -52px;
+          bottom: -86px;
+          width: 270px;
+          height: 270px;
+          border: 1px solid rgba(255,255,255,0.32);
+          border-radius: 50%;
+          box-shadow: 0 0 0 18px rgba(255,255,255,0.06), 0 0 0 38px rgba(255,255,255,0.04);
+          content: "";
+        }
+        .balance-content, .balance-actions { position: relative; z-index: 1; }
+        .wallet-card-eyebrow {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          margin-bottom: 34px;
+          color: rgba(255,255,255,0.7);
+          font-size: 11px;
+          font-weight: 700;
+          letter-spacing: 0.16em;
+        }
+        .wallet-card-dot { width: 7px; height: 7px; border-radius: 50%; background: #fff; box-shadow: 0 0 0 4px rgba(255,255,255,0.14); }
+        .balance-label { color: rgba(255,255,255,0.72); font-size: 13px; }
+        .balance-amount { gap: 12px; margin: 8px 0 6px; }
+        .coin-mark {
+          display: grid;
+          width: 42px;
+          height: 42px;
+          place-items: center;
+          border: 2px solid #fff;
+          border-radius: 50%;
+          color: #fff;
+          font-family: Georgia, serif;
+          font-size: 25px;
+          font-weight: 700;
+          line-height: 1;
+          flex: 0 0 auto;
+        }
+        .coin-mark.compact {
+          width: 1.25em;
+          height: 1.25em;
+          border-width: 1.5px;
+          font-size: 0.75em;
+          color: currentColor;
+        }
+        .coin-amount {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          white-space: nowrap;
+        }
+        .stat-value .coin-amount {
+          gap: 7px;
+        }
+        .balance-amount .coin-mark {
+          color: #fff;
+        }
+        .balance-amount .amount { font-size: clamp(38px, 5vw, 56px); letter-spacing: -0.04em; }
+        .balance-currency { color: rgba(255,255,255,0.65); font-size: 13px; }
+        .balance-actions { align-self: flex-end; }
+        .action-button { min-height: 46px; border: 1px solid rgba(255,255,255,0.3); border-radius: 12px; padding: 11px 18px; font-size: 13px; font-weight: 700; box-shadow: 0 8px 18px rgba(0,0,0,0.08); }
+        .action-button span[aria-hidden="true"] { display: inline-grid; width: 24px; height: 24px; place-items: center; border: 1px solid currentColor; border-radius: 50%; font-size: 16px; line-height: 1; }
+        .action-button.primary { background: rgba(255,255,255,0.24); color: #fff; }
+        .action-button.primary:hover { background: rgba(255,255,255,0.34); }
+        .action-button.secondary { background: rgba(255,255,255,0.1); color: #fff; }
+        .action-button.secondary:hover { background: rgba(255,255,255,0.18); }
+        .wallet-section-heading { display: flex; align-items: end; justify-content: space-between; gap: 20px; margin: 0 0 18px; }
+        .section-kicker { margin: 0 0 5px; color: var(--green); font-size: 11px; font-weight: 800; letter-spacing: 0.15em; }
+        .wallet-section-heading h2 { margin: 0; color: #17251b; font-family: "Playfair Display", Georgia, serif; font-size: clamp(22px, 3vw, 30px); }
+        .secure-note { color: var(--muted); font-size: 12px; white-space: nowrap; }
+        .secure-note span { color: var(--green); font-size: 9px; }
+        .wallet-tabs { gap: 4px; margin-bottom: 18px; padding: 4px; border: 1px solid var(--line); border-radius: 14px; background: #eef5ed; }
+        .tab { margin: 0; border: 0; border-radius: 10px; padding: 11px 18px; color: var(--muted); font-size: 13px; }
+        .tab:hover { color: var(--green); }
+        .tab.active { background: #fff; color: var(--green); box-shadow: 0 3px 10px rgba(17,54,33,0.08); }
+        .wallet-content { padding: 0; background: transparent; }
+        .currency-symbol { display: grid; place-items: center; }
+        .stats-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 18px; }
+        .stat-card { position: relative; min-height: 142px; padding: 18px; overflow: hidden; border: 1px solid var(--line); border-left: 0; border-radius: 16px; background: #fff; box-shadow: 0 8px 22px rgba(17,54,33,0.04); }
+        .stat-mark { position: absolute; top: 14px; right: 16px; display: grid; width: 28px; height: 28px; place-items: center; border-radius: 9px; font-size: 16px; font-weight: 700; }
+        .stat-mark.earned { background: #e4f3e5; color: var(--green); }
+        .stat-mark.spent { background: #fff0dc; color: #b66b16; }
+        .stat-mark.pending { background: #edf0ea; color: #6a766d; }
+        .stat-mark.market { background: #f9edc7; color: #a87600; }
+        .stat-label { color: var(--muted); font-size: 11px; letter-spacing: 0.08em; }
+        .stat-value { margin: 18px 0 6px; color: #17251b; font-size: 19px; }
+        .stat-change { color: var(--green); font-size: 11px; }
+        .recent-activity, .transactions-section, .transfer-section { padding: 24px; border: 1px solid var(--line); border-radius: 18px; background: #fff; box-shadow: 0 8px 22px rgba(17,54,33,0.04); }
+        .recent-activity h3, .transactions-header h3, .transfer-section h3 { color: #17251b; font-size: 17px; }
+        .activity-item, .transaction-item { border-color: #edf2eb; }
+        .activity-icon, .transaction-icon { border-radius: 12px; }
+        .activity-icon[data-type='credit'], .transaction-icon[data-type='credit'] { background: #e4f3e5; color: var(--green); }
+        .activity-icon[data-type='debit'], .transaction-icon[data-type='debit'] { background: #fff0dc; color: #b66b16; }
+        .transaction-item, .transfer-form { background: #f7faf6; }
+        .send-button { border-radius: 999px; background: var(--coin-blue); }
+        .send-button:hover:not(:disabled) { background: var(--coin-blue-deep); }
+        .transfer-info { border-left-color: var(--gold); background: #fff9e9; }
+        .transfer-info h4 { color: #8d6710; }
+        @media (min-width: 760px) {
+          .overview-section { display: grid; grid-template-columns: minmax(0,1.25fr) minmax(280px,0.75fr); gap: 18px; }
+          .overview-section .stats-grid { grid-column: 1 / -1; }
+        }
+        @media (max-width: 760px) {
+          .wallet-container { padding: 20px 14px 40px; }
+          .balance-card { align-items: flex-start; padding: 24px; }
+          .balance-actions { align-self: stretch; }
+          .stats-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+          .wallet-section-heading { align-items: flex-start; flex-direction: column; gap: 8px; }
+          .recent-activity, .transactions-section, .transfer-section { padding: 18px; }
         }
       `}</style>
     </AppShell>

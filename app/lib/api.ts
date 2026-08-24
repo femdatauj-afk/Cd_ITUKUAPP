@@ -89,7 +89,7 @@ const seededSocialUsers = [
   { email: 'kelechi.nnaji@ituku.app', username: 'KelechiNnaji', password: 'slimkid0042', fullName: 'Kelechi Nnaji', village: 'Amokolo', phone: '08030010007', sex: 'male', bio: 'Community member passionate about local commerce.', role: 'member', isVerified: true, isActive: true, verificationStatus: 'active', phoneVerified: true, emailVerified: true, verifiedBadge: 'ItukuApp Verified', walletBalance: 1000000 },
   { email: 'rose.nwoko@ituku.app', username: 'RoseNwoko', password: 'slimkid0042', fullName: 'Rose Nwoko', village: 'Umukulu', phone: '08030010008', sex: 'female', bio: 'Supports family wellbeing and community care programs.', role: 'member', isVerified: true, isActive: true, verificationStatus: 'active', phoneVerified: true, emailVerified: true, verifiedBadge: 'ItukuApp Verified', walletBalance: 1000000 },
   { email: 'musa.nwachukwu@ituku.app', username: 'MusaNwachukwu', password: 'slimkid0042', fullName: 'Musa Nwachukwu', village: 'Umukulu', phone: '08030010009', sex: 'male', bio: 'Student and community volunteer', role: 'member', isVerified: true, isActive: true, verificationStatus: 'active', phoneVerified: true, emailVerified: true, verifiedBadge: 'ItukuApp Verified', walletBalance: 1000000 },
-  { email: 'ituku.bolt@ituku.app', username: 'ItukuBolt', password: 'slimkid0042', fullName: 'Ituku Bolt', village: 'ItukuHQ', phone: '08030010010', sex: 'other', bio: 'Platform operations and backend support account.', role: 'admin', isVerified: true, isActive: true, verificationStatus: 'active', phoneVerified: true, emailVerified: true, verifiedBadge: 'ItukuApp Verified', walletBalance: 1000000 },
+  { email: 'ituku.bolt@ituku.app', username: 'ItukuBolt', password: 'slimkid0042', fullName: 'Ituku Bolt Customer Service', village: 'ItukuHQ', phone: '08030010010', sex: 'other', bio: 'Platform operations and backend support account.', role: 'admin', isVerified: true, isActive: true, verificationStatus: 'active', phoneVerified: true, emailVerified: true, verifiedBadge: 'ItukuApp Verified', walletBalance: 1000000 },
 ];
 
 function getLocalUsers(): Array<Record<string, any>> {
@@ -161,6 +161,13 @@ export function getSeededUsers() {
 }
 
 export async function fetchCommunityUsers(query = '') {
+  if (typeof window !== 'undefined' && !getSession()?.token) {
+    return getSeededUsers().filter((user) => {
+      const needle = query.trim().toLowerCase();
+      return !needle || `${user.fullName} ${user.username}`.toLowerCase().includes(needle);
+    });
+  }
+
   try {
     const endpoint = query ? `/users/directory?q=${encodeURIComponent(query)}` : '/users/directory';
     const users = await request<Array<Record<string, any>>>(endpoint);
@@ -186,9 +193,9 @@ export async function fetchCommunityUsers(query = '') {
 
 export function getMarketplaceListings() {
   if (typeof window === 'undefined') return [
-    { id: 'mkt-1', title: 'Fresh yam tubers', price: 8500, seller: 'Ngozi', location: 'Amokolo market', category: 'Food', description: 'Cleanly harvested yam tubers sold in bundles for home use and wholesale.', badge: 'Featured' },
-    { id: 'mkt-2', title: 'Handmade woven basket', price: 3200, seller: 'Ify', location: 'Umukulu arts hub', category: 'Handcraft', description: 'Beautiful woven basket made by local artisans.', badge: 'New' },
-    { id: 'mkt-3', title: 'Phone repair service', price: 2000, seller: 'Moses', location: 'Central town', category: 'Services', description: 'Fast phone screen and charging port repair with same-day service.', badge: 'Popular' },
+    { id: 'mkt-1', title: 'Fresh yam tubers', price: 8500, seller: 'Ngozi', sellerUsername: 'KelechiNnaji', sellerId: 'seed-user-7', sellerPhoto: '', sellerVerified: true, location: 'Amokolo market', category: 'Food', description: 'Cleanly harvested yam tubers sold in bundles for home use and wholesale.', badge: 'Featured' },
+    { id: 'mkt-2', title: 'Handmade woven basket', price: 3200, seller: 'Ify', sellerUsername: 'RoseNwoko', sellerId: 'seed-user-8', sellerPhoto: '', sellerVerified: true, location: 'Umukulu arts hub', category: 'Handcraft', description: 'Beautiful woven basket made by local artisans.', badge: 'New' },
+    { id: 'mkt-3', title: 'Phone repair service', price: 2000, seller: 'Moses', sellerUsername: 'MusaNwachukwu', sellerId: 'seed-user-9', sellerPhoto: '', sellerVerified: true, location: 'Central town', category: 'Services', description: 'Fast phone screen and charging port repair with same-day service.', badge: 'Popular' },
   ];
 
   const raw = localStorage.getItem('ituku-marketplace-listings');
@@ -204,7 +211,17 @@ export function getMarketplaceListings() {
   }
 
   try {
-    return JSON.parse(raw);
+    const pages = JSON.parse(raw);
+    if (!Array.isArray(pages) || pages.length === 0) {
+      const defaults = [
+        { id: 'seed-page-1', name: 'Ituku Business Hub', category: 'Business', followers: 812 },
+        { id: 'seed-page-2', name: 'Catholic Youth Organization of Nigeria CYON', category: 'Church', followers: 460 },
+        { id: 'seed-page-3', name: 'Community Secondary School Ituku CSSI Forum', category: 'School', followers: 221 },
+      ];
+      localStorage.setItem('ituku-community-pages', JSON.stringify(defaults));
+      return defaults;
+    }
+    return pages;
   } catch {
     localStorage.removeItem('ituku-marketplace-listings');
     return getMarketplaceListings();
@@ -214,6 +231,8 @@ export function getMarketplaceListings() {
 export async function fetchMarketplaceListings() {
   try {
     const listings = await request<Array<Record<string, any>>>('/community/marketplace');
+    if (listings.length === 0) return getMarketplaceListings();
+
     return listings.map((listing) => ({
       id: listing.id,
       title: listing.title,
@@ -228,6 +247,9 @@ export async function fetchMarketplaceListings() {
       status: listing.status,
       createdAt: listing.createdAt,
       sellerId: listing.seller?.id,
+      sellerUsername: listing.seller?.username,
+      sellerPhoto: listing.seller?.profilePhoto,
+      sellerVerified: Boolean(listing.seller?.isVerified),
       contactPreference: listing.contactPreference,
     }));
   } catch {
@@ -310,7 +332,16 @@ export function getCommunityPages() {
   }
 
   try {
-    return JSON.parse(raw);
+    const pages = JSON.parse(raw);
+    if (Array.isArray(pages) && pages.length > 0) return pages;
+
+    const defaults = [
+      { id: 'seed-page-1', name: 'Ituku Business Hub', category: 'Business', followers: 812 },
+      { id: 'seed-page-2', name: 'Catholic Youth Organization of Nigeria CYON', category: 'Church', followers: 460 },
+      { id: 'seed-page-3', name: 'Community Secondary School Ituku CSSI Forum', category: 'School', followers: 221 },
+    ];
+    localStorage.setItem('ituku-community-pages', JSON.stringify(defaults));
+    return defaults;
   } catch {
     localStorage.removeItem('ituku-community-pages');
     return getCommunityPages();
@@ -429,168 +460,45 @@ export async function registerUser(payload: {
   phone?: string;
   verificationMethod?: 'email' | 'phone';
 }) {
-  try {
-    return await request<{ token: string; user: Record<string, any> }>('/auth/register', {
-      method: 'POST',
-      body: JSON.stringify(payload),
-    });
-  } catch (error) {
-    if (typeof window === 'undefined') throw error;
-
-    const users = getLocalUsers();
-    const existing = users.find((user) => user.email === payload.email || user.username === payload.username);
-    if (existing) {
-      throw new Error('A user with that email or username already exists.');
-    }
-
-    const user = {
-      ...payload,
-      id: `local-user-${Date.now()}`,
-      password: payload.password,
-      role: 'member',
-      isVerified: false,
-      isActive: false,
-      verificationStatus: 'pending',
-      phoneVerified: false,
-      emailVerified: false,
-      verificationMethod: payload.verificationMethod || (payload.phone ? 'phone' : 'email'),
-      verifiedBadge: 'Pending Verification',
-      usernameUpdatedAt: new Date().toISOString(),
-      walletBalance: 0,
-    };
-
-    persistLocalUsers([...users, user]);
-    const response = {
-      token: 'local-demo-token',
-      user: {
-        ...user,
-        password: undefined,
-      },
-    };
-    saveSession(response);
-    return response;
-  }
+  return request<{ token: string; user: Record<string, any> }>('/auth/register', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
 }
 
 export async function loginUser(payload: { identifier: string; password: string }) {
-  try {
-    return await request<{ token: string; user: Record<string, any> }>('/auth/login', {
-      method: 'POST',
-      body: JSON.stringify(payload),
-    });
-  } catch (error) {
-    if (typeof window === 'undefined') throw error;
-
-    const users = getLocalUsers();
-    const normalizedInput = payload.identifier.trim();
-    const found = users.find((user) => {
-      const matchesIdentifier = user.email === normalizedInput || user.username === normalizedInput;
-      const matchesPassword = user.password === payload.password;
-      return matchesIdentifier && matchesPassword;
-    });
-
-    if (!found) {
-      throw new Error('Invalid credentials.');
-    }
-
-    if (!found.isActive && found.verificationStatus !== 'active') {
-      throw new Error('Your account is pending verification. Admin approval is required before login.');
-    }
-
-    const response = {
-      token: 'local-demo-token',
-      user: {
-        ...found,
-        password: undefined,
-      },
-    };
-    saveSession(response);
-    return response;
-  }
+  return request<{ token: string; user: Record<string, any> }>('/auth/login', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
 }
 
 export async function requestOtpForUser(userId: string) {
-  try {
-    return await request<{ success: boolean }>('/auth/request-otp', {
-      method: 'POST',
-      body: JSON.stringify({ userId }),
-    });
-  } catch {
-    return { success: true };
-  }
+  return request<{ success: boolean }>('/auth/request-otp', {
+    method: 'POST',
+    body: JSON.stringify({ userId }),
+  });
 }
 
 export async function sendVerificationEmail(email: string) {
-  try {
-    return await request<{ success: boolean }>('/auth/send-verification-email', {
-      method: 'POST',
-      body: JSON.stringify({ email }),
-    });
-  } catch {
-    return { success: true };
-  }
+  return request<{ success: boolean }>('/auth/send-verification-email', {
+    method: 'POST',
+    body: JSON.stringify({ email }),
+  });
 }
 
 export async function verifyEmailToken(token: string) {
-  try {
-    return await request<{ user: Record<string, any> }>('/auth/verify-email', {
-      method: 'POST',
-      body: JSON.stringify({ token }),
-    });
-  } catch {
-    return { user: { isVerified: true, isActive: true, verificationStatus: 'active' } };
-  }
+  return request<{ user: Record<string, any> }>('/auth/verify-email', {
+    method: 'POST',
+    body: JSON.stringify({ token }),
+  });
 }
 
 export async function verifyOtp(userId: string, code: string) {
-  try {
-    const response = await request<{ token: string }>('/auth/verify-otp', {
-      method: 'POST',
-      body: JSON.stringify({ userId, code }),
-    });
-
-    const session = getSession();
-    const sessionUser = session?.user;
-    if (sessionUser) {
-      const users = getLocalUsers();
-      const current = users.find((user) => user.id === userId || user.email === sessionUser.email);
-      if (current) {
-        const next = { ...current, phoneVerified: true, isVerified: true, isActive: true, verificationStatus: 'active', verifiedBadge: 'ItukuApp Verified' };
-        const rest = users.map((user) => user.id === current.id ? next : user);
-        persistLocalUsers(rest);
-        saveSession({ token: response.token, user: { ...next, password: undefined } });
-      }
-    }
-
-    return response;
-  } catch (error) {
-    if (typeof window === 'undefined') throw error;
-
-    const users = getLocalUsers();
-    const current = users.find((user) => user.id === userId);
-    if (!current) {
-      throw new Error('Invalid or expired OTP.');
-    }
-
-    const codeMatches = code === '123456' || String(code).trim() === String((current.phone || '').slice(-6));
-    if (!codeMatches) {
-      throw new Error('Invalid or expired OTP.');
-    }
-
-    const updated = {
-      ...current,
-      phoneVerified: true,
-      isVerified: true,
-      isActive: true,
-      verificationStatus: 'active',
-      verifiedBadge: 'ItukuApp Verified',
-    };
-
-    persistLocalUsers(users.map((user) => user.id === userId ? updated : user));
-    const authPayload = { token: 'local-demo-token', user: { ...updated, password: undefined } };
-    saveSession(authPayload);
-    return authPayload;
-  }
+  return request<{ token: string }>('/auth/verify-otp', {
+    method: 'POST',
+    body: JSON.stringify({ userId, code }),
+  });
 }
 
 export async function fetchProfile() {
@@ -652,15 +560,176 @@ export async function fundWallet(amount: number) {
   });
 }
 
-export async function fetchFeed() {
-  return request<Array<{ id: string; content: string; createdAt: string; author: { id: string; fullName: string; username: string; village: string } }>>('/community/feed');
+export async function fetchWalletBalance() {
+  return request<{ balance: number }>('/wallet/balance');
 }
 
-export async function createPost(content: string) {
-  return request<{ id: string; content: string }>('/community/posts', {
+export async function fetchWalletLedger(limit = 50, offset = 0) {
+  return request<Array<{ id: string; amount: number; type: string; description: string; referenceId?: string; createdAt: string }>>(`/wallet/ledger?limit=${limit}&offset=${offset}`);
+}
+
+export async function fetchWalletTransfers(limit = 50, offset = 0) {
+  return request<Array<{ id: string; amount: number; type: 'sent' | 'received'; status: string; createdAt: string; receiver?: { username: string }; sender?: { username: string } }>>(`/wallet/transactions?limit=${limit}&offset=${offset}`);
+}
+
+export async function fetchUserDirectory(query: string) {
+  return request<Array<{ id: string; username: string; fullName: string }>>(`/users/directory?q=${encodeURIComponent(query)}`);
+}
+
+export async function fetchUserProfile(usernameOrId: string) {
+  return request<Record<string, any>>(`/users/profile/${encodeURIComponent(usernameOrId)}`);
+}
+
+export type ProfileConnection = {
+  id: string;
+  username: string;
+  fullName: string;
+  profilePhoto?: string | null;
+  bio?: string | null;
+  isFollowedBack?: boolean;
+};
+
+export async function fetchUserFollowers(userId: string) {
+  return request<ProfileConnection[]>(`/users/${encodeURIComponent(userId)}/followers`);
+}
+
+export async function fetchUserFollowing(userId: string) {
+  return request<ProfileConnection[]>(`/users/${encodeURIComponent(userId)}/following`);
+}
+
+export async function followUser(userId: string) {
+  return request<{ success: boolean; following: boolean }>(`/users/${encodeURIComponent(userId)}/follow`, { method: 'POST' });
+}
+
+export async function unfollowUser(userId: string) {
+  return request<{ success: boolean; following: boolean }>(`/users/${encodeURIComponent(userId)}/follow`, { method: 'DELETE' });
+}
+
+export async function sendFriendRequest(userId: string) {
+  return request<Record<string, any>>(`/users/friend-request/${encodeURIComponent(userId)}`, { method: 'POST' });
+}
+
+export async function unfriendUser(userId: string) {
+  return request<{ success: boolean }>(`/users/${encodeURIComponent(userId)}/friend`, { method: 'DELETE' });
+}
+
+export async function sendPrivateMessage(receiverId: string, content: string) {
+  return request<{ id: string; senderId: string; receiverId: string; content: string; createdAt: string }>('/messages', {
     method: 'POST',
-    body: JSON.stringify({ content }),
+    body: JSON.stringify({ receiverId, content }),
   });
+}
+
+export async function sendWalletCoins(receiverId: string, amount: number) {
+  return request<{ success: boolean; senderBalance: number }>('/wallet/send-coins', {
+    method: 'POST',
+    body: JSON.stringify({ receiverId, amount }),
+  });
+}
+
+export async function requestWalletWithdrawal(amount: number, bankAccount: string, accountHolderName: string) {
+  return request<{ success: boolean; remainingBalance: number; withdrawal: { id: string; status: string; amount: number } }>('/wallet/request-withdrawal', {
+    method: 'POST',
+    body: JSON.stringify({ amount, bankAccount, accountHolderName }),
+  });
+}
+
+export async function requestPasswordReset(email: string) {
+  return request<{ success: boolean }>('/auth/request-password-reset', {
+    method: 'POST',
+    body: JSON.stringify({ email }),
+  });
+}
+
+export async function resetPassword(token: string, newPassword: string) {
+  return request<{ success: boolean }>('/auth/reset-password', {
+    method: 'POST',
+    body: JSON.stringify({ token, newPassword }),
+  });
+}
+
+export async function fetchNotifications() {
+  return request<{ success: boolean; data: Array<{ id: string; title: string; message: string; read: boolean; createdAt: string }> }>('/notifications');
+}
+
+export async function openDirectChat(userId: string) {
+  return request<{ id: string; participants: Array<{ userId: string }> }>(`/chat/conversations/direct/${encodeURIComponent(userId)}`, { method: 'POST' });
+}
+
+export async function fetchChatDetail(conversationId: string) {
+  return request<{ conversation: { id: string }; messages: Array<Record<string, any>> }>(`/chat/conversations/${encodeURIComponent(conversationId)}`);
+}
+
+export async function sendChatMessage(payload: { conversationId: string; content: string; replyToMessageId?: string }) {
+  return request<Record<string, any>>('/chat/messages', { method: 'POST', body: JSON.stringify(payload) });
+}
+
+export async function editChatMessage(messageId: string, content: string) {
+  return request<Record<string, any>>(`/chat/messages/${encodeURIComponent(messageId)}`, { method: 'PUT', body: JSON.stringify({ content }) });
+}
+
+export async function deleteChatMessage(messageId: string) {
+  return request<Record<string, any>>(`/chat/messages/${encodeURIComponent(messageId)}`, { method: 'DELETE' });
+}
+
+export async function startChatCall(conversationId: string, type: 'VOICE' | 'VIDEO') {
+  return request<{ id: string; conversationId: string; receiverId: string; type: 'VOICE' | 'VIDEO'; status: string }>('/chat/calls', {
+    method: 'POST',
+    body: JSON.stringify({ conversationId, type }),
+  });
+}
+
+export async function updateChatCall(callId: string, action: 'ACCEPTED' | 'REJECTED' | 'CANCELLED' | 'ENDED' | 'MISSED' | 'FAILED') {
+  return request<{ id: string; status: string }>(`/chat/calls/${encodeURIComponent(callId)}/${action}`, { method: 'POST' });
+}
+
+export async function fetchFeed(limit = 20, offset = 0) {
+  return request<Array<{ id: string; content: string; photo?: string | null; createdAt: string; author: { id: string; fullName: string; username: string; village: string }; _count?: { comments: number; likes: number; shares: number } }>>(`/community/feed?limit=${limit}&offset=${offset}`);
+}
+
+export async function createPost(content: string, photo?: string) {
+  return request<{ id: string; content: string; photo?: string | null }>('/community/posts', {
+    method: 'POST',
+    body: JSON.stringify({ content, photo }),
+  });
+}
+
+export async function likePost(postId: string) {
+  return request<{ success: boolean; likesCount: number }>(`/posts/${postId}/like`, {
+    method: 'POST',
+  });
+}
+
+export async function unlikePost(postId: string) {
+  return request<{ success: boolean; likesCount: number }>(`/posts/${encodeURIComponent(postId)}/like`, { method: 'DELETE' });
+}
+
+export async function addPostComment(postId: string, content: string) {
+  return request<Record<string, any>>(`/posts/${encodeURIComponent(postId)}/comments`, { method: 'POST', body: JSON.stringify({ content }) });
+}
+
+export async function fetchPostComments(postId: string, basePath = `/posts/${encodeURIComponent(postId)}/comments`) {
+  return request<Array<Record<string, any>>>(basePath);
+}
+
+export async function addCommentReply(postId: string, parentId: string, content: string, mediaUrl?: string, basePath = `/posts/${encodeURIComponent(postId)}/comments`) {
+  return request<Record<string, any>>(basePath, { method: 'POST', body: JSON.stringify({ content, parentId: parentId || undefined, mediaUrl }) });
+}
+
+export async function editPostComment(postId: string, commentId: string, content: string, basePath = `/posts/${encodeURIComponent(postId)}/comments`) {
+  return request<Record<string, any>>(`${basePath}/${encodeURIComponent(commentId)}`, { method: 'PUT', body: JSON.stringify({ content }) });
+}
+
+export async function deletePostComment(postId: string, commentId: string, basePath = `/posts/${encodeURIComponent(postId)}/comments`) {
+  return request<{ success: boolean }>(`${basePath}/${encodeURIComponent(commentId)}`, { method: 'DELETE' });
+}
+
+export async function toggleCommentReaction(postId: string, commentId: string, basePath = `/posts/${encodeURIComponent(postId)}/comments`) {
+  return request<{ reacted: boolean; count: number }>(`${basePath}/${encodeURIComponent(commentId)}/reaction`, { method: 'POST' });
+}
+
+export async function sharePost(postId: string) {
+  return request<{ success: boolean; sharesCount: number }>(`/posts/${encodeURIComponent(postId)}/share`, { method: 'POST' });
 }
 
 export async function fetchVillages() {
@@ -683,13 +752,101 @@ export async function createGroup(payload: { name: string; category?: string }) 
 }
 
 export async function fetchPages() {
-  return request<Array<{ id: string; name: string; category: string; followers: number; owner: { fullName: string } }>>('/community/pages');
+  return request<Array<{ id: string; name: string; slug: string; category: string; followers: number; owner: { id: string; fullName: string; username: string }; _count?: { followersOf: number; members: number; posts: number } }>>('/community/pages');
 }
 
 export async function createPage(payload: { name: string; category: string }) {
-  return request<{ id: string; name: string; category: string }>('/community/pages', {
+  return request<{ id: string; name: string; slug: string; category: string }>('/community/pages', {
     method: 'POST',
     body: JSON.stringify(payload),
+  });
+}
+
+export async function fetchPage(pageId: string) {
+  return request<{
+    id: string;
+    name: string;
+    slug: string;
+    category: string;
+    description?: string | null;
+    profilePhoto?: string | null;
+    coverPhoto?: string | null;
+    website?: string | null;
+    phone?: string | null;
+    address?: string | null;
+    followers: number;
+    isVerified: boolean;
+    owner: { id: string; fullName: string; username: string };
+    settings?: { allowMessages: boolean; allowComments: boolean; allowUserPosts: boolean } | null;
+    _count?: { followersOf: number; members: number; posts: number };
+    isFollowing: boolean;
+    canManage: boolean;
+  }>(`/community/pages/${encodeURIComponent(pageId)}`);
+}
+
+export async function followPage(pageId: string) {
+  return request<{ success: boolean; following: boolean; followers: number }>(`/community/pages/${encodeURIComponent(pageId)}/follow`, { method: 'POST' });
+}
+
+export async function unfollowPage(pageId: string) {
+  return request<{ success: boolean; following: boolean; followers: number }>(`/community/pages/${encodeURIComponent(pageId)}/follow`, { method: 'DELETE' });
+}
+
+export async function fetchPageMembers(pageId: string) {
+  return request<Array<{ id: string; userId: string; role: string; user: { id: string; fullName: string; username: string; profilePhoto?: string | null } }>>(`/community/pages/${encodeURIComponent(pageId)}/members`);
+}
+
+export async function updatePageMember(pageId: string, userId: string, role: string) {
+  return request<{ id: string; userId: string; role: string }>(`/community/pages/${encodeURIComponent(pageId)}/members/${encodeURIComponent(userId)}`, {
+    method: 'PUT',
+    body: JSON.stringify({ role }),
+  });
+}
+
+export async function removePageMember(pageId: string, userId: string) {
+  return request<{ success: boolean }>(`/community/pages/${encodeURIComponent(pageId)}/members/${encodeURIComponent(userId)}`, { method: 'DELETE' });
+}
+
+export type PageSettings = {
+  allowMessages: boolean;
+  allowComments: boolean;
+  allowUserPosts: boolean;
+  followerVisibility: string;
+  defaultPostStatus: string;
+};
+
+export async function fetchPageSettings(pageId: string) {
+  return request<PageSettings>(`/community/pages/${encodeURIComponent(pageId)}/settings`);
+}
+
+export async function updatePageSettings(pageId: string, settings: Partial<PageSettings>) {
+  return request<PageSettings>(`/community/pages/${encodeURIComponent(pageId)}/settings`, {
+    method: 'PUT',
+    body: JSON.stringify(settings),
+  });
+}
+
+export type PageProfileUpdate = { name?: string; category?: string; description?: string; website?: string; phone?: string; address?: string; profilePhoto?: string; coverPhoto?: string };
+
+export async function updatePageProfile(pageId: string, profile: PageProfileUpdate) {
+  return request<Record<string, any>>(`/community/pages/${encodeURIComponent(pageId)}/profile`, {
+    method: 'PUT',
+    body: JSON.stringify(profile),
+  });
+}
+
+export async function fetchPageAnalytics(pageId: string) {
+  return request<{ followers: number; posts: number; views: number; followerAdds: number; followerDrops: number; postReach: number; postEngagement: number }>(`/community/pages/${encodeURIComponent(pageId)}/analytics`);
+}
+
+export async function fetchPagePosts(pageId: string, limit = 20, offset = 0) {
+  return request<{ success: boolean; data: Array<{ id: string; content: string; photo?: string | null; likes: number; comments: number; createdAt: string; author: { fullName: string; username: string; profilePhoto?: string | null } }>; pagination: { total: number; hasMore: boolean } }>(`/pages/${encodeURIComponent(pageId)}/posts?limit=${limit}&offset=${offset}`);
+}
+
+export async function createPagePost(pageId: string, content: string, photo?: string) {
+  return request<{ success: boolean; data: { id: string; content: string; photo?: string | null; likes: number; comments: number; createdAt: string; author: { fullName: string; username: string; profilePhoto?: string | null } } }>(`/pages/${encodeURIComponent(pageId)}/posts`, {
+    method: 'POST',
+    body: JSON.stringify({ content, photo }),
   });
 }
 
@@ -712,7 +869,8 @@ export async function uploadFile(file: File, directory: string = 'general') {
     });
 
     if (!response.ok) {
-      throw new Error(`Upload failed: ${response.statusText}`);
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.message || `Upload failed: ${response.statusText}`);
     }
 
     return await response.json();

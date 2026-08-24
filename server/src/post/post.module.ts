@@ -12,7 +12,12 @@ import { CommentController } from './comment.controller';
 @Module({
   imports: [PrismaModule],
   providers: [PostService, GroupPostService, PagePostService, CommentService],
-  controllers: [PostController, GroupPostController, PagePostController, CommentController],
+  controllers: [
+    PostController,
+    GroupPostController,
+    PagePostController,
+    CommentController,
+  ],
   exports: [PostService, GroupPostService, PagePostService, CommentService],
 })
 export class PostModule {}

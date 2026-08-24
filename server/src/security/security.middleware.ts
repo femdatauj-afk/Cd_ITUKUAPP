@@ -1,4 +1,10 @@
-import { Injectable, NestMiddleware, Logger, HttpException, HttpStatus } from '@nestjs/common';
+import {
+  Injectable,
+  NestMiddleware,
+  Logger,
+  HttpException,
+  HttpStatus,
+} from '@nestjs/common';
 import { Request, Response, NextFunction } from 'express';
 import { RateLimitService } from './rate-limit.service';
 import { SecurityHeadersService } from './security-headers.service';
@@ -27,7 +33,10 @@ export class SecurityMiddleware implements NestMiddleware {
 
     if (!rateLimitResult.allowed) {
       this.logger.warn(`Rate limit exceeded for ${clientIp} on ${req.path}`);
-      res.setHeader('Retry-After', Math.ceil((rateLimitResult.resetTime - Date.now()) / 1000));
+      res.setHeader(
+        'Retry-After',
+        Math.ceil((rateLimitResult.resetTime - Date.now()) / 1000),
+      );
       throw new HttpException(
         {
           statusCode: HttpStatus.TOO_MANY_REQUESTS,
@@ -47,7 +56,10 @@ export class SecurityMiddleware implements NestMiddleware {
     // Apply CORS headers if origin is allowed
     const origin = req.headers.origin || '';
     const allowedOrigins = this.environmentService.get('corsOrigins');
-    const corsHeaders = this.securityHeadersService.getCorsHeaders(origin, allowedOrigins);
+    const corsHeaders = this.securityHeadersService.getCorsHeaders(
+      origin,
+      allowedOrigins,
+    );
 
     // Merge and apply all headers
     const allHeaders = { ...securityHeaders, ...corsHeaders };
@@ -58,9 +70,18 @@ export class SecurityMiddleware implements NestMiddleware {
     });
 
     // Set rate limit headers
-    res.setHeader('X-RateLimit-Limit', this.rateLimitService['config'].maxRequests.toString());
-    res.setHeader('X-RateLimit-Remaining', rateLimitResult.remaining.toString());
-    res.setHeader('X-RateLimit-Reset', Math.ceil(rateLimitResult.resetTime / 1000).toString());
+    res.setHeader(
+      'X-RateLimit-Limit',
+      this.rateLimitService['config'].maxRequests.toString(),
+    );
+    res.setHeader(
+      'X-RateLimit-Remaining',
+      rateLimitResult.remaining.toString(),
+    );
+    res.setHeader(
+      'X-RateLimit-Reset',
+      Math.ceil(rateLimitResult.resetTime / 1000).toString(),
+    );
 
     // Log request if in production
     if (isProduction) {

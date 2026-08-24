@@ -1,4 +1,14 @@
-import { Controller, Get, Post, Delete, Param, Body, Req, UseGuards, Query } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Delete,
+  Param,
+  Body,
+  Req,
+  UseGuards,
+  Query,
+} from '@nestjs/common';
 import { MessageService } from './message.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 
@@ -13,7 +23,11 @@ export class MessageController {
     @Req() req: any,
     @Body() body: { receiverId: string; content: string },
   ) {
-    return this.messageService.sendMessage(req.user.id, body.receiverId, body.content);
+    return this.messageService.sendMessage(
+      req.user.id,
+      body.receiverId,
+      body.content,
+    );
   }
 
   // Get conversation with a user

@@ -30,7 +30,15 @@ export class RequestValidationService {
     return {
       maxRequestSize: parseInt(process.env.MAX_REQUEST_SIZE || '10485760'), // 10MB
       maxHeaderSize: parseInt(process.env.MAX_HEADER_SIZE || '8192'), // 8KB
-      allowedHttpMethods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS'],
+      allowedHttpMethods: [
+        'GET',
+        'POST',
+        'PUT',
+        'DELETE',
+        'PATCH',
+        'HEAD',
+        'OPTIONS',
+      ],
       blockedIps: new Set(process.env.BLOCKED_IPS?.split(',') || []),
       allowedContentTypes: [
         'application/json',
@@ -73,7 +81,9 @@ export class RequestValidationService {
 
     // Validate header size
     if (headerSize > this.rules.maxHeaderSize) {
-      errors.push(`Request headers exceed maximum size: ${headerSize} > ${this.rules.maxHeaderSize}`);
+      errors.push(
+        `Request headers exceed maximum size: ${headerSize} > ${this.rules.maxHeaderSize}`,
+      );
     }
 
     // Validate content type for POST/PUT/PATCH
@@ -104,7 +114,10 @@ export class RequestValidationService {
       const value = data[field];
 
       // Required field check
-      if (rule.required && (value === undefined || value === null || value === '')) {
+      if (
+        rule.required &&
+        (value === undefined || value === null || value === '')
+      ) {
         errors.push(`Required field missing: ${field}`);
         continue;
       }
@@ -115,16 +128,22 @@ export class RequestValidationService {
 
       // Type check
       if (rule.type && typeof value !== rule.type) {
-        errors.push(`Field ${field} must be of type ${rule.type}, got ${typeof value}`);
+        errors.push(
+          `Field ${field} must be of type ${rule.type}, got ${typeof value}`,
+        );
       }
 
       // String length check
       if (rule.minLength && value.length < rule.minLength) {
-        errors.push(`Field ${field} must be at least ${rule.minLength} characters`);
+        errors.push(
+          `Field ${field} must be at least ${rule.minLength} characters`,
+        );
       }
 
       if (rule.maxLength && value.length > rule.maxLength) {
-        errors.push(`Field ${field} must not exceed ${rule.maxLength} characters`);
+        errors.push(
+          `Field ${field} must not exceed ${rule.maxLength} characters`,
+        );
       }
 
       // Pattern check (regex)
