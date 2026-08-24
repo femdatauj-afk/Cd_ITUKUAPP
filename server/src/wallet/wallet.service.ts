@@ -50,7 +50,7 @@ export class WalletService {
         data: { balance: { increment: amount } },
       });
 
-      await tx.walletTransaction.createMany({
+      await (tx as any).walletTransaction.createMany({
         data: [
           { userId: senderId, amount: -amount, type: 'transfer_debit', description: `Transfer to user ${receiverId}`, referenceId: transaction.id },
           { userId: receiverId, amount, type: 'transfer_credit', description: `Transfer from user ${senderId}`, referenceId: transaction.id },
@@ -102,7 +102,7 @@ export class WalletService {
         where: { userId },
         data: { balance: { decrement: amount } },
       });
-      await tx.walletTransaction.create({
+      await (tx as any).walletTransaction.create({
         data: { userId, amount: -amount, type: 'withdrawal_debit', description: 'Withdrawal request', referenceId: withdrawal.id },
       });
       return { withdrawal, remainingBalance: updatedWallet.balance };
@@ -156,7 +156,7 @@ export class WalletService {
         where: { userId: withdrawal.userId },
         data: { balance: { increment: withdrawal.amount } },
       });
-      await tx.walletTransaction.create({
+      await (tx as any).walletTransaction.create({
         data: { userId: withdrawal.userId, amount: withdrawal.amount, type: 'withdrawal_refund', description: `Withdrawal rejected: ${reason}`, referenceId: withdrawal.id },
       });
       const updated = await tx.withdrawal.update({
@@ -264,7 +264,7 @@ export class WalletService {
     limit: number = 50,
     offset: number = 0,
   ) {
-    return this.prisma.walletTransaction.findMany({
+    return (this.prisma as any).walletTransaction.findMany({
       where: { userId },
       orderBy: { createdAt: 'desc' },
       take: limit,
@@ -296,7 +296,7 @@ export class WalletService {
         where: { userId },
         data: { balance: { increment: amount } },
       });
-      await tx.walletTransaction.create({
+      await (tx as any).walletTransaction.create({
         data: { userId, amount, type: 'admin_credit', description: 'Administrative coin credit' },
       });
       return { wallet };

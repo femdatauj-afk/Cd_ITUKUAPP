@@ -140,7 +140,7 @@ export class CommunityService {
         },
       });
 
-      await tx.walletTransaction.create({
+      await (tx as any).walletTransaction.create({
         data: {
           userId,
           amount: -20,
@@ -269,7 +269,7 @@ export class CommunityService {
         },
       });
 
-      await tx.walletTransaction.create({
+      await (tx as any).walletTransaction.create({
         data: {
           userId,
           amount: -30,
@@ -284,7 +284,7 @@ export class CommunityService {
   }
 
   async getPages() {
-    const pages = await this.prisma.page.findMany({
+    const pages = await (this.prisma.page as any).findMany({
       include: {
         owner: { select: { id: true, fullName: true, username: true } },
         _count: { select: { followersOf: true, members: true, posts: true } },
@@ -292,8 +292,8 @@ export class CommunityService {
       orderBy: { createdAt: 'desc' },
     });
     return Promise.all(pages.map(async (page) => {
-      if (page.slug) return page;
-      return this.prisma.page.update({
+      if ((page as any).slug) return page;
+      return (this.prisma.page as any).update({
         where: { id: page.id },
         data: { slug: `${page.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}-${page.id.slice(-6)}` },
         include: {
@@ -637,7 +637,7 @@ export class CommunityService {
         },
       });
 
-      await tx.walletTransaction.create({
+      await (tx as any).walletTransaction.create({
         data: {
           userId,
           amount: -50,

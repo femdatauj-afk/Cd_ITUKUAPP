@@ -19,7 +19,7 @@ describe('EnvironmentService', () => {
 
     const service = new EnvironmentService();
     expect(service.get('jwtSecret')).toBeTruthy();
-    expect(service.get('databaseUrl')).toContain('postgresql://');
+    expect(service.get('databaseUrl')).toBe('file:./itukuapp-local.db');
     expect(service.get('corsOrigins')).toContain('http://localhost:3001');
   });
 });
