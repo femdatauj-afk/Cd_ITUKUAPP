@@ -22,14 +22,14 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
   }
 
   async onModuleInit(): Promise<void> {
-    try {
-      await this.client.connect();
-      this.logger.log('Redis connection established');
-    } catch (error) {
-      this.logger.warn(
-        `Redis is unavailable; continuing without cache features: ${error instanceof Error ? error.message : String(error)}`,
-      );
-    }
+    void this.client
+      .connect()
+      .then(() => this.logger.log('Redis connection established'))
+      .catch((error) => {
+        this.logger.warn(
+          `Redis is unavailable; continuing without cache features: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      });
   }
 
   async onModuleDestroy(): Promise<void> {

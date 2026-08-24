@@ -72,8 +72,11 @@ async function bootstrap() {
   );
 
   // Start server
-  await app.listen(config.port);
-  logger.log(`✅ Server is running on port ${config.port}`);
+  await app.init();
+  const server = app.getHttpServer();
+  server.listen(config.port, '0.0.0.0', () => {
+    logger.log(`✅ Server is running on port ${config.port}`);
+  });
 }
 
 bootstrap().catch((error) => {
